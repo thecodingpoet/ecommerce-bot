@@ -4,4 +4,11 @@ version = "0.1.0"
 description = "An AI-powered conversational agent that answers product questions using RAG and autonomously processes orders through natural dialogue"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "sqlalchemy>=2.0.0",
+    "chromadb>=0.4.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "ipython>=8.0.0",
+]
+

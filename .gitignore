@@ -11,3 +11,8 @@ wheels/
 
 # Environment variables file
 .env
+
+# Database files
+data/*.db
+data/*.db-journal
+data/chroma_db/
