@@ -1,8 +1,9 @@
-"""Product vector store using ChromaDB for semantic search."""
+"""Product data management including catalog and vector store."""
 
 import json
 import shutil
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -11,6 +12,79 @@ from langchain_openai import OpenAIEmbeddings
 from utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+class ProductCatalog:
+    """Manages access to product catalog data."""
+
+    def __init__(self, products_path: str = "data/products.json"):
+        """
+        Initialize ProductCatalog.
+
+        Args:
+            products_path: Path to products JSON file
+        """
+        self.products_path = products_path
+        self._products: List[Dict] = []
+        self._load_products()
+
+    def _load_products(self):
+        """Load products from JSON file."""
+        products_file = Path(self.products_path)
+        if not products_file.exists():
+            raise FileNotFoundError(f"Products file not found: {self.products_path}")
+
+        with open(products_file) as f:
+            self._products = json.load(f)
+
+        logger.info(f"Loaded {len(self._products)} products from {self.products_path}")
+
+    def get_product(self, product_id: str) -> Optional[Dict]:
+        """
+        Get product by ID.
+
+        Args:
+            product_id: Product identifier
+
+        Returns:
+            Product dict or None if not found
+        """
+        for product in self._products:
+            if product["product_id"] == product_id:
+                return product
+        return None
+
+    def search_by_name(self, name: str) -> List[Dict]:
+        """
+        Search products by name (case-insensitive partial match).
+
+        Args:
+            name: Product name to search for
+
+        Returns:
+            List of matching products
+        """
+        name_lower = name.lower()
+        return [p for p in self._products if name_lower in p["name"].lower()]
+
+    def is_available(self, product_id: str) -> bool:
+        """
+        Check if product is available for order.
+
+        Args:
+            product_id: Product identifier
+
+        Returns:
+            True if product is in stock or low stock
+        """
+        product = self.get_product(product_id)
+        if not product:
+            return False
+        return product["stock_status"] in ["in_stock", "low_stock"]
+
+    def get_all_products(self) -> List[Dict]:
+        """Get all products."""
+        return self._products.copy()
 
 
 class ProductVectorStore:
@@ -115,52 +189,3 @@ class ProductVectorStore:
         )
 
         return vector_store
-
-
-# Convenience functions for backwards compatibility
-def initialize_vector_store(
-    products_path: str = "data/products.json",
-    persist_directory: str = "data/chroma_db",
-    collection_name: str = "products",
-) -> Chroma:
-    """
-    Initialize or reset vector store with product embeddings.
-
-    Args:
-        products_path: Path to products.json file
-        persist_directory: Path to ChromaDB persistent storage
-        collection_name: Name of the collection to create
-
-    Returns:
-        Chroma vector store with embedded products
-    """
-    store = ProductVectorStore(persist_directory, collection_name)
-    return store.initialize(products_path)
-
-
-def get_vector_store(
-    persist_directory: str = "data/chroma_db",
-    collection_name: str = "products",
-) -> Chroma:
-    """
-    Get existing vector store collection.
-
-    Args:
-        persist_directory: Path to ChromaDB persistent storage
-        collection_name: Name of the collection
-
-    Returns:
-        Chroma vector store
-    """
-    store = ProductVectorStore(persist_directory, collection_name)
-    return store.get()
-
-
-if __name__ == "__main__":
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    logger.info("Initializing vector store...")
-    vector_store = initialize_vector_store()
-    logger.info("Vector store ready!")

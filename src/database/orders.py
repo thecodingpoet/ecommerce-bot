@@ -62,7 +62,7 @@ class OrderItem(Base):
 class OrderDatabase:
     """Database manager for order operations."""
 
-    def __init__(self, db_path: str = "ecommerce.db"):
+    def __init__(self, db_path: str = "data/ecommerce.db"):
         """Initialize database connection and create tables.
 
         Args:
@@ -130,6 +130,10 @@ class OrderDatabase:
             session.add(order)
             session.commit()
             session.refresh(order)
+
+            # Eagerly load items before closing session
+            _ = order.items
+
             return order
 
         except Exception as e:
