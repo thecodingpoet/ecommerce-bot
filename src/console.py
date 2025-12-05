@@ -1,4 +1,4 @@
-"""Interactive console for the e-commerce chatbot - similar to Rails console."""
+"""Interactive console for the e-commerce chatbot."""
 
 import json
 from pathlib import Path
