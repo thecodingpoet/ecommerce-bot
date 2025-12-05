@@ -14,11 +14,11 @@ from dotenv import load_dotenv
 from database import ProductVectorStore
 from utils.logger import setup_logger
 
+load_dotenv()
+
 logger = setup_logger(__name__)
 
 if __name__ == "__main__":
-    load_dotenv()
-
     logger.info("Initializing vector store...")
     store = ProductVectorStore()
     vector_store = store.initialize()

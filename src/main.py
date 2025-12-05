@@ -31,9 +31,9 @@ def main():
         print(f"\n{'='*60}")
         print("ANSWER:")
         print(f"{'='*60}")
-        print(result["answer"])
+        print(result.answer)
 
-        print(f"\nProducts retrieved: {len(result.get('products', []))}")
+        print(f"\nProducts retrieved: {len(result.products)}")
 
 
 if __name__ == "__main__":

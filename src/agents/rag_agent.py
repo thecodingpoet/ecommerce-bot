@@ -3,12 +3,13 @@ RAG Agent for product search and information retrieval.
 Uses LangChain's agent pattern with tool-based retrieval.
 """
 
-from typing import Any, Dict, List
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
 from database import ProductVectorStore
 from utils.logger import setup_logger
@@ -16,6 +17,26 @@ from utils.logger import setup_logger
 load_dotenv()
 
 logger = setup_logger(__name__)
+
+
+class ProductInfo(BaseModel):
+    """Structured product information returned by the agent."""
+
+    product_id: str = Field(description="Unique product identifier")
+    name: str = Field(description="Product name")
+    description: str = Field(description="Product description")
+    price: float = Field(description="Product price in dollars")
+    category: str = Field(description="Product category")
+    stock_status: str = Field(description="Stock availability status")
+
+
+class RAGResponse(BaseModel):
+    """Structured response from the RAG agent."""
+
+    answer: str = Field(description="Natural language answer to the user's query")
+    products: List[ProductInfo] = Field(
+        default_factory=list, description="List of relevant products found"
+    )
 
 
 class RAGAgent:
@@ -27,13 +48,13 @@ class RAGAgent:
     """
 
     def __init__(
-        self, model_name: str = "gpt-3.5-turbo", temperature: float = 0, k: int = 5
+        self, model_name: str = "gpt-4o-mini", temperature: float = 0, k: int = 5
     ):
         """
         Initialize the RAG Agent.
 
         Args:
-            model_name: OpenAI model to use for generation
+            model_name: OpenAI model to use for generation (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
             k: Number of products to retrieve from vector store
         """
@@ -42,9 +63,8 @@ class RAGAgent:
         self.k = k
         self.vector_store = ProductVectorStore().get()
 
-        # Create the retrieval tool as instance method
-        @tool(response_format="content_and_artifact")
-        def retrieve_products(query: str) -> tuple[str, List[Dict[str, Any]]]:
+        @tool
+        def retrieve_products(query: str) -> str:
             """
             Retrieve product information to help answer customer queries.
 
@@ -55,100 +75,85 @@ class RAGAgent:
                 query: The customer's search query or question about products
 
             Returns:
-                Formatted product information and raw product data
+                Formatted product information
             """
             logger.debug(f"Tool called: retrieve_products(query='{query}')")
 
-            # Perform similarity search
             results = self.vector_store.similarity_search(query, k=self.k)
 
-            # Convert to list of dicts with metadata
-            products = []
-            for doc in results:
-                product = {
-                    "product_id": doc.metadata.get("product_id"),
-                    "name": doc.metadata.get("name"),
-                    "description": doc.page_content,
-                    "price": doc.metadata.get("price"),
-                    "category": doc.metadata.get("category"),
-                    "stock_status": doc.metadata.get("stock_status"),
-                }
-                products.append(product)
-
-            # Format for LLM context
-            if not products:
+            if not results:
                 serialized = "No products found matching the query."
             else:
                 parts = ["Here are the relevant products:\n"]
-                for i, product in enumerate(products, 1):
+                for i, doc in enumerate(results, 1):
                     parts.append(
-                        f"{i}. {product['name']}\n"
-                        f"   ID: {product['product_id']}\n"
-                        f"   Price: ${product['price']:.2f}\n"
-                        f"   Category: {product['category']}\n"
-                        f"   Stock: {product['stock_status']}\n"
-                        f"   Description: {product['description']}\n"
+                        f"{i}. {doc.metadata.get('name')}\n"
+                        f"   ID: {doc.metadata.get('product_id')}\n"
+                        f"   Price: ${doc.metadata.get('price'):.2f}\n"
+                        f"   Category: {doc.metadata.get('category')}\n"
+                        f"   Stock: {doc.metadata.get('stock_status')}\n"
+                        f"   Description: {doc.page_content}\n"
                     )
                 serialized = "\n".join(parts)
 
-            logger.info(f"Retrieved {len(products)} products for query: '{query}'")
+            logger.info(f"Retrieved {len(results)} products for query: '{query}'")
 
-            return serialized, products
+            return serialized
 
         model = ChatOpenAI(model=model_name, temperature=temperature)
 
         system_prompt = (
             "You are a helpful e-commerce product assistant. Your role is to help customers find products and answer questions about them. "
             "You have access to a tool that retrieves product information from our catalog. Use it to search for products when needed. "
-            "When responding: "
-            "Be friendly and conversational. "
-            "Provide accurate information based on the retrieved product data. "
-            "Highlight key features like price, category, and stock status. "
+            "When responding, you MUST provide a structured response with two fields: "
+            "'answer' - a friendly, conversational response to the customer's query. "
+            "'products' - a list of ALL relevant products from the retrieved results that match the customer's query. "
+            "IMPORTANT: Include complete product details (product_id, name, description, price, category, stock_status) for each relevant product. "
+            "ONLY include products that are truly relevant to the customer's query. "
+            "For example, if asked about laptops, only include actual laptop computers, not laptop accessories. "
+            "Highlight key features like price, category, and stock status in your answer. "
             "If a product is out of stock, mention it clearly and suggest alternatives if available. "
-            "If you don't find relevant products, say so politely and ask for clarification. "
-            "Format your responses in a natural, helpful way. Don't just list products - engage with the customer's specific question."
+            "If you don't find relevant products, say so politely and ask for clarification."
         )
 
-        # Create agent with retrieval tool
         self.agent = create_agent(
-            model, tools=[retrieve_products], system_prompt=system_prompt
+            model,
+            tools=[retrieve_products],
+            system_prompt=system_prompt,
+            response_format=RAGResponse,
         )
 
         logger.info(
             f"RAG Agent initialized with model={model_name}, temperature={temperature}, k={k}"
         )
 
-    def invoke(self, user_query: str) -> Dict[str, Any]:
+    def invoke(
+        self, user_query: str, chat_history: Optional[List[Dict]] = None
+    ) -> RAGResponse:
         """
         Answer user query using the agent.
 
         Args:
             user_query: User's question or search query
+            chat_history: Optional list of previous messages in conversation
 
         Returns:
-            Dictionary with:
-                - answer: Natural language response
-                - products: List of retrieved products (if any)
-                - messages: Full conversation history
+            RAGResponse with structured answer and products
         """
         logger.info(f"Processing query: '{user_query}'")
 
-        # Invoke agent
-        result = self.agent.invoke(
-            {"messages": [{"role": "user", "content": user_query}]}
-        )
+        messages = chat_history.copy() if chat_history else []
+        messages.append({"role": "user", "content": user_query})
 
-        messages = result["messages"]
-        answer = messages[-1].content if messages else ""
+        result = self.agent.invoke({"messages": messages})
 
-        products = []
-        for msg in messages:
-            if hasattr(msg, "artifact") and msg.artifact:
-                if isinstance(msg.artifact, list):
-                    products.extend(msg.artifact)
+        structured_response = result.get("structured_response")
+
+        if not structured_response:
+            logger.error("Agent did not return a structured response")
+            return RAGResponse(answer="I couldn't process that request.", products=[])
 
         logger.info(
-            f"Successfully answered query with {len(products)} products retrieved"
+            f"Successfully answered query with {len(structured_response.products)} products"
         )
-
-        return {"answer": answer, "products": products, "messages": messages}
+        return structured_response

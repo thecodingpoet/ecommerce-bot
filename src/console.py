@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from src.database import OrderDatabase
+from database import OrderDatabase
 
 # Initialize database
 db = OrderDatabase("data/ecommerce.db")
