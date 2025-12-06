@@ -3,7 +3,8 @@ Order Agent for handling purchase requests and order creation.
 Uses LangChain's agent pattern with tools for order operations.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+import json
+from typing import Dict, List, Literal, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
@@ -111,8 +112,7 @@ class OrderAgent:
 
         @tool
         def create_order(
-            product_id: str,
-            quantity: int,
+            items: str,
             customer_name: str,
             email: str,
             shipping_address: str,
@@ -121,13 +121,13 @@ class OrderAgent:
             Create a new order in the system.
 
             Use this ONLY after you have:
-            1. Validated the product
+            1. Validated ALL products
             2. Collected ALL customer information (name, email, address)
             3. Confirmed the order with the customer
 
             Args:
-                product_id: Product ID to order
-                quantity: Quantity to order
+                items: JSON string of items list. Each item must have: product_id, quantity
+                       Example: '[{"product_id": "TECH-007", "quantity": 2}, {"product_id": "HOME-004", "quantity": 1}]'
                 customer_name: Customer's full name
                 email: Customer's email address
                 shipping_address: Complete shipping address
@@ -135,41 +135,68 @@ class OrderAgent:
             Returns:
                 Order confirmation with order ID and details
             """
-            logger.debug(
-                f"Tool called: create_order(product_id='{product_id}', quantity={quantity})"
-            )
 
-            product = self.catalog.get_product(product_id)
-            if not product:
-                return f"Error: Product {product_id} not found."
+            logger.debug(f"Tool called: create_order with items: {items}")
 
-            if not self.catalog.is_available(product_id):
-                return f"Error: {product['name']} is out of stock."
+            try:
+                items_list = json.loads(items)
+            except json.JSONDecodeError:
+                return f"Error: Invalid items format. Must be a JSON array."
 
-            total = product["price"] * quantity
+            if not items_list or not isinstance(items_list, list):
+                return f"Error: Items must be a non-empty list."
 
-            order = self.order_db.create_order(
-                customer_name=customer_name,
-                customer_email=email,
-                items=[
+            # Validate all products and build order items
+            order_items = []
+            total = 0
+            items_summary = []
+
+            for item in items_list:
+                product_id = item.get("product_id")
+                quantity = item.get("quantity", 1)
+
+                product = self.catalog.get_product(product_id)
+                if not product:
+                    return f"Error: Product {product_id} not found."
+
+                if not self.catalog.is_available(product_id):
+                    return f"Error: {product['name']} is out of stock."
+
+                subtotal = product["price"] * quantity
+                total += subtotal
+
+                order_items.append(
                     {
                         "product_id": product_id,
                         "product_name": product["name"],
                         "quantity": quantity,
                         "unit_price": product["price"],
                     }
-                ],
+                )
+
+                items_summary.append(
+                    f"- {quantity}x {product['name']} @ ${product['price']:.2f} each = ${subtotal:.2f}"
+                )
+
+            # Create order
+            order = self.order_db.create_order(
+                customer_name=customer_name,
+                customer_email=email,
+                items=order_items,
             )
 
-            logger.info(f"Order created: {order.order_id}")
+            logger.info(
+                f"Order created: {order.order_id} with {len(order_items)} items"
+            )
+
+            items_text = "\n".join(items_summary)
 
             return (
                 f"✅ Order placed successfully!\n\n"
                 f"Order ID: {order.order_id}\n"
                 f"Customer: {customer_name}\n"
                 f"Email: {email}\n\n"
-                f"Items:\n"
-                f"- {quantity}x {product['name']} @ ${product['price']:.2f} each\n\n"
+                f"Items:\n{items_text}\n\n"
                 f"Total: ${total:.2f}\n\n"
                 f"Shipping to: {shipping_address}\n\n"
                 f"You'll receive a confirmation email at {email}.\n"
@@ -181,19 +208,24 @@ class OrderAgent:
         system_prompt = (
             "You are a helpful order assistant for an e-commerce store. Your role is to help customers place orders. "
             "When a customer wants to order something, follow these steps: "
-            "1. VALIDATE THE PRODUCT: Use validate_product tool with the product_id and quantity. "
-            "2. COLLECT CUSTOMER INFO: You need ALL of these - Customer's full name, Email address, Complete shipping address (street, city, state, zip). "
-            "3. CONFIRM ORDER: Show a summary and ask for confirmation. "
-            "4. CREATE ORDER: Once confirmed, use create_order tool. "
+            "1. VALIDATE PRODUCTS: Use validate_product tool for EACH product_id and quantity the customer wants. "
+            "2. ASK TO ADD MORE: After validating each product, ask 'Would you like to add anything else to your order?' before collecting customer info. "
+            "3. COLLECT CUSTOMER INFO: Once customer is done adding items, collect ALL of these - Customer's full name, Email address, Complete shipping address (street, city, state, zip). "
+            "4. CONFIRM ORDER: Show a summary with ALL items and total price, ask for confirmation. "
+            "5. CREATE ORDER: Once confirmed, use create_order tool with ALL validated items as a JSON array. "
             "IMPORTANT RULES: "
-            "Always validate product before collecting customer info. "
+            "Always validate ALL products before collecting customer info. "
+            "After each product validation, ask if they want to add more items. "
+            "Only proceed to collect customer info when they confirm they're done shopping. "
+            "Support multiple items in a single order - keep track of all validated products. "
+            'When calling create_order, pass items as a JSON string array like: \'[{"product_id": "TECH-007", "quantity": 2}, {"product_id": "HOME-004", "quantity": 1}]\'. '
             "Never create an order without confirming with the customer first. "
-            "If product is out of stock, offer to help find alternatives. "
+            "If any product is out of stock, inform customer and offer alternatives. "
             "Be conversational and friendly. "
             "Ask for one piece of information at a time if customer doesn't provide all details. "
             "Use the 'missing_fields' array to track what info you still need. "
             "In your structured response: "
-            "Set status to 'collecting_info' while gathering details. "
+            "Set status to 'collecting_info' while gathering details or asking about more items. "
             "Set status to 'confirming' when showing order summary. "
             "Set status to 'completed' after successful order creation. "
             "Set status to 'failed' if order cannot be completed. "
