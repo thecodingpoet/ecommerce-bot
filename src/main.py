@@ -1,243 +1,217 @@
 """
-E-commerce chatbot main entry point.
-Interactive testing for RAG, Order, and Orchestrator agents.
+E-commerce chatbot CLI.
+Interactive assistant for product search and order placement.
 """
+
+import argparse
+import logging
+from enum import Enum
 
 from dotenv import load_dotenv
 
 from agents.order_agent import OrderAgent
 from agents.rag_agent import RAGAgent
+from utils.logger import setup_logger
+from utils.spinner import Spinner
 
 load_dotenv()
 
 
-def test_rag_agent():
-    """Test RAG Agent with product queries."""
-    agent = RAGAgent()
+class Agent(Enum):
+    """Available agent types."""
 
-    queries = [
-        "What laptops do you have?",
-        "I'm looking for wireless headphones",
-        "Do you have any gaming products?",
-        "Show me products under $100",
-    ]
+    RAG = "rag"
+    ORDER = "order"
 
-    for query in queries:
-        print(f"\n{'='*60}")
-        print(f"Query: {query}")
-        print(f"{'='*60}")
-
-        result = agent.invoke(query)
-
-        print(f"\nANSWER:")
-        print(result.answer)
-        print(f"\nProducts retrieved: {len(result.products)}")
+    @classmethod
+    def default(cls):
+        """Return the default agent."""
+        return cls.RAG
 
 
-def test_order_agent():
-    """Interactive chat with Order Agent."""
-    agent = OrderAgent()
-    chat_history = []
+def setup_logging(verbose: bool = False):
+    """Configure logging based on verbosity level.
 
+    Args:
+        verbose: Enable DEBUG level logging if True, otherwise INFO
+
+    Returns:
+        Configured logger instance
+    """
+    log_level = logging.DEBUG if verbose else logging.WARNING
+    logging.getLogger().setLevel(log_level)
+
+    return setup_logger("ecommerce-cli", level=log_level)
+
+
+def print_banner(verbose: bool = False):
+    """Print welcome banner with application info and commands.
+
+    Args:
+        verbose: Whether verbose mode is enabled
+    """
     print("\n" + "=" * 70)
-    print("ORDER AGENT - Interactive Chat")
+    print("🛍️  Welcome to Our E-Commerce Store!")
     print("=" * 70)
-    print("Type 'exit' or 'quit' to end the conversation")
+    print("I'm your AI shopping assistant. I can help you:")
+    print("  • Search and browse products")
+    print("  • Get detailed product information")
+    print("  • Place orders with ease")
+    print()
+    print("Commands:")
+    print("  • Type 'exit' or 'quit' to end the conversation")
+    if verbose:
+        print("  • Verbose mode is enabled - debug info will be shown")
     print("=" * 70)
 
-    while True:
-        user_input = input("\nYou: ").strip()
 
-        if user_input.lower() in ["exit", "quit"]:
-            print("\nGoodbye!")
-            break
+def handle_rag_response(response, logger):
+    """Handle RAG agent response and check for transfers.
 
-        if not user_input:
-            continue
+    Args:
+        response: RAG agent response object
+        logger: Logger instance
 
-        try:
-            response = agent.invoke(user_input, chat_history=chat_history)
+    Returns:
+        Tuple of (next_agent, message) where next_agent is Agent enum or None
+    """
+    print(f"\nAssistant: {response.answer}")
 
-            print(f"\nAgent: {response.message}")
+    next_agent = None
+    if response.transfer_to_agent == Agent.ORDER.value:
+        next_agent = Agent.ORDER
+        logger.info("Transferring control to Order Agent")
+        print("\n[Connecting you with our order specialist...]")
 
-            if response.status == "completed":
-                print(f"\n✅ Order completed! Order ID: {response.order_id}")
-
-                continue_prompt = (
-                    input("\nWould you like to place another order? (yes/no): ")
-                    .strip()
-                    .lower()
-                )
-                if continue_prompt != "yes":
-                    print("\nThank you for using our service!")
-                    break
-                else:
-                    chat_history = []
-                    continue
-
-            elif response.status == "failed":
-                print("\n❌ Order failed. Please try again.")
-                retry_prompt = (
-                    input("\nWould you like to try again? (yes/no): ").strip().lower()
-                )
-                if retry_prompt != "yes":
-                    break
-                else:
-                    chat_history = []
-                    continue
-
-            chat_history.append({"role": "user", "content": user_input})
-            chat_history.append({"role": "assistant", "content": response.message})
-
-        except KeyboardInterrupt:
-            print("\n\nInterrupted. Goodbye!")
-            break
-        except Exception as e:
-            print(f"\n❌ Error: {e}")
-            print("Please try again.")
+    return next_agent, response.answer
 
 
-def test_handoff_pattern():
-    """Interactive chat with agent handoff pattern."""
+def handle_order_response(response, logger):
+    """Handle Order agent response and check for transfers.
+
+    Args:
+        response: Order agent response object
+        logger: Logger instance
+
+    Returns:
+        Tuple of (next_agent, message, reset_history)
+    """
+    print(f"\nAssistant: {response.message}")
+
+    next_agent = None
+    reset_history = False
+
+    if response.status == "completed":
+        print(f"\n✅ Order completed! Order ID: {response.order_id}")
+        logger.info("Resetting chat history after order completion")
+        reset_history = True
+        next_agent = Agent.RAG
+    elif response.status == "failed":
+        print("\n❌ Order failed.")
+        logger.info("Resetting chat history after order failure")
+        reset_history = True
+        next_agent = Agent.RAG
+
+    if response.transfer_to_agent == Agent.RAG.value:
+        next_agent = Agent.RAG
+        logger.info("Transferring control to RAG Agent")
+        print("\n[Returning to product search...]")
+
+    return next_agent, response.message, reset_history
+
+
+def invoke_agent(
+    current_agent, user_input, chat_history, rag_agent, order_agent, logger
+):
+    """Invoke the appropriate agent and handle response.
+
+    Args:
+        current_agent: Current Agent enum
+        user_input: User's input message
+        chat_history: Conversation history
+        rag_agent: RAG agent instance
+        order_agent: Order agent instance
+        logger: Logger instance
+
+    Returns:
+        Tuple of (next_agent, message, reset_history)
+    """
+    logger.debug(f"Current agent: {current_agent.name}")
+    logger.debug(f"Chat history length: {len(chat_history)}")
+
+    spinner = Spinner("Processing")
+    spinner.start()
+
+    try:
+        if current_agent == Agent.RAG:
+            response = rag_agent.invoke(user_input, chat_history=chat_history)
+            next_agent, message = handle_rag_response(response, logger)
+            return next_agent, message, False
+        else:
+            response = order_agent.invoke(user_input, chat_history=chat_history)
+            return handle_order_response(response, logger)
+    finally:
+        spinner.stop()
+
+
+def main(verbose: bool = False):
+    """Main CLI - E-commerce assistant with product search and ordering.
+
+    Args:
+        verbose: Enable verbose output for debugging
+    """
+    # Configure logging FIRST, before creating agents
+    logger = setup_logging(verbose)
+
     rag_agent = RAGAgent()
     order_agent = OrderAgent()
     chat_history = []
+    current_agent = Agent.default()
 
-    # Start with RAG Agent by default
-    current_agent = "rag"
-
-    print("\n" + "=" * 70)
-    print("E-COMMERCE ASSISTANT - Multi-Agent Handoff Pattern")
-    print("=" * 70)
-    print("I can help you find products and place orders!")
-    print("Type 'exit' or 'quit' to end the conversation")
-    print("=" * 70)
+    print_banner(verbose)
 
     while True:
         user_input = input("\nYou: ").strip()
 
         if user_input.lower() in ["exit", "quit"]:
-            print("\nGoodbye!")
+            print("\nThank you for shopping with us! Goodbye!")
             break
 
         if not user_input:
             continue
 
         try:
-            # Route to current agent
-            if current_agent == "rag":
-                response = rag_agent.invoke(user_input, chat_history=chat_history)
+            next_agent, message, reset_history = invoke_agent(
+                current_agent, user_input, chat_history, rag_agent, order_agent, logger
+            )
 
-                print(f"\nAssistant: {response.answer}")
-
-                # Check for transfer
-                if response.transfer_to_agent == "order":
-                    current_agent = "order"
-                    print("\n[Transferring to Order Specialist...]")
-
-                # Update chat history
-                chat_history.append({"role": "user", "content": user_input})
-                chat_history.append({"role": "assistant", "content": response.answer})
-
-            elif current_agent == "order":
-                response = order_agent.invoke(user_input, chat_history=chat_history)
-
-                print(f"\nAssistant: {response.message}")
-
-                # Show order status
-                if response.status == "completed":
-                    print(f"\n✅ Order completed! Order ID: {response.order_id}")
-                    # Reset chat history for new order
-                    chat_history = []
-                    current_agent = "rag"  # Return to RAG for next interaction
-                elif response.status == "failed":
-                    print("\n❌ Order failed.")
-                    chat_history = []
-                    current_agent = "rag"
-
-                # Check for transfer back to RAG
-                if response.transfer_to_agent == "rag":
-                    current_agent = "rag"
-                    print("\n[Transferring to Product Search...]")
-
-                # Update chat history
-                chat_history.append({"role": "user", "content": user_input})
-                chat_history.append({"role": "assistant", "content": response.message})
-
-        except KeyboardInterrupt:
-            print("\n\nInterrupted. Goodbye!")
-            break
-        except Exception as e:
-            print(f"\n❌ Error: {e}")
-            print("Please try again.")
-
-
-def test_orchestrator():
-    """Interactive chat with Orchestrator Agent."""
-    from agents.orchestrator import Orchestrator
-
-    orchestrator = Orchestrator()
-    chat_history = []
-
-    print("\n" + "=" * 70)
-    print("ORCHESTRATOR - Unified E-Commerce Assistant")
-    print("=" * 70)
-    print("Ask about products or place orders - I'll route you automatically!")
-    print("Type 'exit' or 'quit' to end the conversation")
-    print("=" * 70)
-
-    while True:
-        user_input = input("\nYou: ").strip()
-
-        if user_input.lower() in ["exit", "quit"]:
-            print("\nGoodbye!")
-            break
-
-        if not user_input:
-            continue
-
-        try:
-            response = orchestrator.invoke(user_input, chat_history=chat_history)
-
-            print(f"\nAssistant: {response.message}")
-            print(f"[Routed to: {response.agent_used}]")
-
-            # Update chat history
             chat_history.append({"role": "user", "content": user_input})
-            chat_history.append({"role": "assistant", "content": response.message})
+            chat_history.append({"role": "assistant", "content": message})
+
+            if reset_history:
+                chat_history = []
+            if next_agent:
+                current_agent = next_agent
 
         except KeyboardInterrupt:
-            print("\n\nInterrupted. Goodbye!")
+            print("\n\nThank you for shopping with us! Goodbye!")
             break
         except Exception as e:
+            logger.error(f"Error: {e}")
+            if verbose:
+                logger.exception("Full traceback:")
             print(f"\n❌ Error: {e}")
             print("Please try again.")
-
-
-def main():
-    """Main entry point - choose which agent to test."""
-    print("\n" + "=" * 70)
-    print("E-COMMERCE CHATBOT - TEST MODE")
-    print("=" * 70)
-    print("1. Test RAG Agent (Product Search)")
-    print("2. Test Order Agent (Place Orders)")
-    print("3. Test Handoff Pattern (Multi-Agent - RECOMMENDED)")
-    print("4. Test Orchestrator (Supervisor Pattern - Legacy)")
-    print("=" * 70)
-
-    choice = input("\nSelect agent to test (1/2/3/4): ").strip()
-
-    if choice == "1":
-        test_rag_agent()
-    elif choice == "2":
-        test_order_agent()
-    elif choice == "3":
-        test_handoff_pattern()
-    elif choice == "4":
-        test_orchestrator()
-    else:
-        print("Invalid choice. Exiting.")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="E-commerce chatbot CLI")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output for debugging",
+    )
+    args = parser.parse_args()
+
+    main(verbose=args.verbose)

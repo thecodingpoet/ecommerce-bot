@@ -3,6 +3,7 @@ RAG Agent for product search and information retrieval.
 Uses LangChain's agent pattern with tool-based retrieval.
 """
 
+import logging
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -12,11 +13,10 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from database import ProductVectorStore
-from utils.logger import setup_logger
 
 load_dotenv()
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ProductInfo(BaseModel):

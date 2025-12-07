@@ -4,6 +4,7 @@ Uses LangChain's agent pattern with tools for order operations.
 """
 
 import json
+import logging
 from typing import Dict, List, Literal, Optional
 
 from dotenv import load_dotenv
@@ -13,11 +14,10 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from database import OrderDatabase, ProductCatalog
-from utils.logger import setup_logger
 
 load_dotenv()
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class OrderResponse(BaseModel):
