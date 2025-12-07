@@ -37,6 +37,10 @@ class OrderResponse(BaseModel):
     order_id: Optional[str] = Field(
         None, description="Order ID after successful creation"
     )
+    transfer_to_agent: Optional[str] = Field(
+        None,
+        description="Agent to transfer to: 'rag' for product search, or None to continue with Order Agent",
+    )
 
 
 class OrderAgent:
@@ -59,6 +63,27 @@ class OrderAgent:
         self.temperature = temperature
         self.catalog = ProductCatalog()
         self.order_db = OrderDatabase()
+
+        @tool
+        def transfer_to_rag_agent(reason: str) -> str:
+            """
+            Transfer the conversation back to the Product Search Agent.
+
+            Use this when the customer wants to:
+            - Search for products
+            - Browse the catalog
+            - Get product information or specifications
+            - Compare products
+            - Ask about product availability
+
+            Args:
+                reason: Brief explanation of why transfer is needed
+
+            Returns:
+                Confirmation message
+            """
+            logger.info(f"Transfer to RAG Agent requested: {reason}")
+            return f"TRANSFER_TO_RAG: {reason}"
 
         @tool
         def validate_product(product_id: str, quantity: int = 1) -> str:
@@ -207,34 +232,45 @@ class OrderAgent:
 
         system_prompt = (
             "You are a helpful order assistant for an e-commerce store. Your role is to help customers place orders. "
-            "When a customer wants to order something, follow these steps: "
-            "1. VALIDATE PRODUCTS: Use validate_product tool for EACH product_id and quantity the customer wants. "
-            "2. ASK TO ADD MORE: After validating each product, ask 'Would you like to add anything else to your order?' before collecting customer info. "
-            "3. COLLECT CUSTOMER INFO: Once customer is done adding items, collect ALL of these - Customer's full name, Email address, Complete shipping address (street, city, state, zip). "
-            "4. CONFIRM ORDER: Show a summary with ALL items and total price, ask for confirmation. "
-            "5. CREATE ORDER: Once confirmed, use create_order tool with ALL validated items as a JSON array. "
-            "IMPORTANT RULES: "
-            "Always validate ALL products before collecting customer info. "
-            "After each product validation, ask if they want to add more items. "
-            "Only proceed to collect customer info when they confirm they're done shopping. "
-            "Support multiple items in a single order - keep track of all validated products. "
-            'When calling create_order, pass items as a JSON string array like: \'[{"product_id": "TECH-007", "quantity": 2}, {"product_id": "HOME-004", "quantity": 1}]\'. '
-            "Never create an order without confirming with the customer first. "
-            "If any product is out of stock, inform customer and offer alternatives. "
-            "Be conversational and friendly. "
-            "Ask for one piece of information at a time if customer doesn't provide all details. "
-            "Use the 'missing_fields' array to track what info you still need. "
-            "In your structured response: "
-            "Set status to 'collecting_info' while gathering details or asking about more items. "
-            "Set status to 'confirming' when showing order summary. "
-            "Set status to 'completed' after successful order creation. "
-            "Set status to 'failed' if order cannot be completed. "
-            "List any missing_fields that still need to be collected."
+            "\n\n"
+            "TOOLS AVAILABLE:\n"
+            "1. validate_product - Check product availability and pricing\n"
+            "2. create_order - Create the final order\n"
+            "3. transfer_to_rag_agent - Transfer customer back to product search\n"
+            "\n"
+            "WHEN TO TRANSFER:\n"
+            "- Customer wants to search for products\n"
+            "- Customer wants to browse catalog or get product info\n"
+            "- Customer wants product recommendations or comparisons\n"
+            "When transferring, set 'transfer_to_agent' to 'rag' and include a friendly message.\n"
+            "\n"
+            "ORDER PROCESS:\n"
+            "1. VALIDATE PRODUCTS: Use validate_product tool for EACH product_id and quantity\n"
+            "2. ASK TO ADD MORE: After each validation, ask 'Would you like to add anything else to your order?'\n"
+            "3. COLLECT INFO: Once done shopping, collect - Name, Email, Full shipping address\n"
+            "4. CONFIRM: Show summary with ALL items and total, ask for confirmation\n"
+            "5. CREATE: Use create_order with ALL items as JSON array\n"
+            "\n"
+            "IMPORTANT RULES:\n"
+            "- Validate ALL products before collecting customer info\n"
+            "- After each validation, ask about adding more items\n"
+            "- Support multiple items in a single order\n"
+            '- Items format: \'[{"product_id": "TECH-007", "quantity": 2}]\'\n'
+            "- Never create order without confirmation\n"
+            "- Handle out-of-stock by offering alternatives or transferring to search\n"
+            "- Ask for one detail at a time if not all provided\n"
+            "\n"
+            "STATUS FIELDS:\n"
+            "- 'collecting_info': Gathering details or asking about more items\n"
+            "- 'confirming': Showing order summary\n"
+            "- 'completed': Order created successfully\n"
+            "- 'failed': Cannot complete order\n"
+            "- 'transfer_to_agent': Set to 'rag' to transfer back to product search"
         )
 
         self.agent = create_agent(
             model,
-            tools=[validate_product, create_order],
+            tools=[transfer_to_rag_agent, validate_product, create_order],
             system_prompt=system_prompt,
             response_format=OrderResponse,
         )

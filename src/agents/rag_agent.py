@@ -37,6 +37,10 @@ class RAGResponse(BaseModel):
     products: List[ProductInfo] = Field(
         default_factory=list, description="List of relevant products found"
     )
+    transfer_to_agent: Optional[str] = Field(
+        None,
+        description="Agent to transfer to: 'order' to handle purchases, or None to stay with RAG agent",
+    )
 
 
 class RAGAgent:
@@ -62,6 +66,27 @@ class RAGAgent:
         self.temperature = temperature
         self.k = k
         self.vector_store = ProductVectorStore().get()
+
+        @tool
+        def transfer_to_order_agent(reason: str) -> str:
+            """
+            Transfer the conversation to the Order Agent to handle purchases.
+
+            Use this when the customer wants to:
+            - Place an order or buy a product
+            - Add items to cart
+            - Make a purchase
+            - Checkout
+            - Provide payment or shipping information
+
+            Args:
+                reason: Brief explanation of why transfer is needed
+
+            Returns:
+                Confirmation message
+            """
+            logger.info(f"Transfer to Order Agent requested: {reason}")
+            return f"TRANSFER_TO_ORDER: {reason}"
 
         @tool
         def retrieve_products(query: str) -> str:
@@ -104,21 +129,33 @@ class RAGAgent:
 
         system_prompt = (
             "You are a helpful e-commerce product assistant. Your role is to help customers find products and answer questions about them. "
-            "You have access to a tool that retrieves product information from our catalog. Use it to search for products when needed. "
-            "When responding, you MUST provide a structured response with two fields: "
-            "'answer' - a friendly, conversational response to the customer's query. "
-            "'products' - a list of ALL relevant products from the retrieved results that match the customer's query. "
-            "IMPORTANT: Include complete product details (product_id, name, description, price, category, stock_status) for each relevant product. "
-            "ONLY include products that are truly relevant to the customer's query. "
-            "For example, if asked about laptops, only include actual laptop computers, not laptop accessories. "
-            "Highlight key features like price, category, and stock status in your answer. "
-            "If a product is out of stock, mention it clearly and suggest alternatives if available. "
-            "If you don't find relevant products, say so politely and ask for clarification."
+            "\n\n"
+            "TOOLS AVAILABLE:\n"
+            "1. retrieve_products - Search our product catalog\n"
+            "2. transfer_to_order_agent - Transfer customer to order specialist when they want to make a purchase\n"
+            "\n"
+            "WHEN TO TRANSFER:\n"
+            "- Customer wants to buy, purchase, or order a product\n"
+            "- Customer wants to add items to cart or checkout\n"
+            "- Customer wants to complete a purchase\n"
+            "When transferring, set 'transfer_to_agent' to 'order' and include a friendly message in 'answer' like 'Let me connect you with our order specialist to complete your purchase.'\n"
+            "\n"
+            "RESPONSE FORMAT:\n"
+            "You MUST provide a structured response with these fields:\n"
+            "- 'answer': A friendly, conversational response to the customer's query\n"
+            "- 'products': List of ALL relevant products from retrieved results (with complete details: product_id, name, description, price, category, stock_status)\n"
+            "- 'transfer_to_agent': Set to 'order' when customer wants to purchase, otherwise None\n"
+            "\n"
+            "BEST PRACTICES:\n"
+            "- ONLY include products truly relevant to the query (e.g., for 'laptops', exclude accessories)\n"
+            "- Highlight price, category, and stock status in your answer\n"
+            "- Mention if products are out of stock and suggest alternatives\n"
+            "- If no relevant products found, ask for clarification politely"
         )
 
         self.agent = create_agent(
             model,
-            tools=[retrieve_products],
+            tools=[retrieve_products, transfer_to_order_agent],
             system_prompt=system_prompt,
             response_format=RAGResponse,
         )
