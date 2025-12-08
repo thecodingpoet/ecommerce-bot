@@ -147,9 +147,12 @@ class RAGAgent:
             "- 'transfer_to_agent': Set to 'order' when customer wants to purchase, otherwise None\n"
             "\n"
             "BEST PRACTICES:\n"
+            "- ALWAYS prominently display the Product ID in your answer (e.g., 'MacBook Pro 16-inch (ID: TECH-001)')\n"
+            "- Format products clearly with ID first for easy reference when ordering\n"
             "- ONLY include products truly relevant to the query (e.g., for 'laptops', exclude accessories)\n"
             "- Highlight price, category, and stock status in your answer\n"
             "- Mention if products are out of stock and suggest alternatives\n"
+            "- Remind customers to use the Product ID when placing orders\n"
             "- If no relevant products found, ask for clarification politely"
         )
 

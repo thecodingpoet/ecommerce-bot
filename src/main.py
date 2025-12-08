@@ -5,28 +5,14 @@ Interactive assistant for product search and order placement.
 
 import argparse
 import logging
-from enum import Enum
 
 from dotenv import load_dotenv
 
-from agents.order_agent import OrderAgent
-from agents.rag_agent import RAGAgent
+from chatbot import ChatbotSession
 from utils.logger import setup_logger
 from utils.spinner import Spinner
 
 load_dotenv()
-
-
-class Agent(Enum):
-    """Available agent types."""
-
-    RAG = "rag"
-    ORDER = "order"
-
-    @classmethod
-    def default(cls):
-        """Return the default agent."""
-        return cls.RAG
 
 
 def setup_logging(verbose: bool = False):
@@ -65,108 +51,16 @@ def print_banner(verbose: bool = False):
     print("=" * 70)
 
 
-def handle_rag_response(response, logger):
-    """Handle RAG agent response and check for transfers.
-
-    Args:
-        response: RAG agent response object
-        logger: Logger instance
-
-    Returns:
-        Tuple of (next_agent, message) where next_agent is Agent enum or None
-    """
-    print(f"\nAssistant: {response.answer}")
-
-    next_agent = None
-    if response.transfer_to_agent == Agent.ORDER.value:
-        next_agent = Agent.ORDER
-        logger.info("Transferring control to Order Agent")
-        print("\n[Connecting you with our order specialist...]")
-
-    return next_agent, response.answer
-
-
-def handle_order_response(response, logger):
-    """Handle Order agent response and check for transfers.
-
-    Args:
-        response: Order agent response object
-        logger: Logger instance
-
-    Returns:
-        Tuple of (next_agent, message, reset_history)
-    """
-    print(f"\nAssistant: {response.message}")
-
-    next_agent = None
-    reset_history = False
-
-    if response.status == "completed":
-        print(f"\n✅ Order completed! Order ID: {response.order_id}")
-        logger.info("Resetting chat history after order completion")
-        reset_history = True
-        next_agent = Agent.RAG
-    elif response.status == "failed":
-        print("\n❌ Order failed.")
-        logger.info("Resetting chat history after order failure")
-        reset_history = True
-        next_agent = Agent.RAG
-
-    if response.transfer_to_agent == Agent.RAG.value:
-        next_agent = Agent.RAG
-        logger.info("Transferring control to RAG Agent")
-        print("\n[Returning to product search...]")
-
-    return next_agent, response.message, reset_history
-
-
-def invoke_agent(
-    current_agent, user_input, chat_history, rag_agent, order_agent, logger
-):
-    """Invoke the appropriate agent and handle response.
-
-    Args:
-        current_agent: Current Agent enum
-        user_input: User's input message
-        chat_history: Conversation history
-        rag_agent: RAG agent instance
-        order_agent: Order agent instance
-        logger: Logger instance
-
-    Returns:
-        Tuple of (next_agent, message, reset_history)
-    """
-    logger.debug(f"Current agent: {current_agent.name}")
-    logger.debug(f"Chat history length: {len(chat_history)}")
-
-    spinner = Spinner("Processing")
-    spinner.start()
-
-    try:
-        if current_agent == Agent.RAG:
-            response = rag_agent.invoke(user_input, chat_history=chat_history)
-            next_agent, message = handle_rag_response(response, logger)
-            return next_agent, message, False
-        else:
-            response = order_agent.invoke(user_input, chat_history=chat_history)
-            return handle_order_response(response, logger)
-    finally:
-        spinner.stop()
-
-
 def main(verbose: bool = False):
     """Main CLI - E-commerce assistant with product search and ordering.
 
     Args:
         verbose: Enable verbose output for debugging
     """
-    # Configure logging FIRST, before creating agents
     logger = setup_logging(verbose)
 
-    rag_agent = RAGAgent()
-    order_agent = OrderAgent()
+    session = ChatbotSession()
     chat_history = []
-    current_agent = Agent.default()
 
     print_banner(verbose)
 
@@ -181,17 +75,31 @@ def main(verbose: bool = False):
             continue
 
         try:
-            next_agent, message, reset_history = invoke_agent(
-                current_agent, user_input, chat_history, rag_agent, order_agent, logger
-            )
+            spinner = Spinner("Processing")
+            spinner.start()
 
-            chat_history.append({"role": "user", "content": user_input})
-            chat_history.append({"role": "assistant", "content": message})
+            try:
+                logger.debug(f"Order mode: {session.orchestrator._in_order_mode}")
+                logger.debug(f"Chat history length: {len(chat_history)}")
 
-            if reset_history:
-                chat_history = []
-            if next_agent:
-                current_agent = next_agent
+                response_message, reset_history, transfer_note = (
+                    session.process_message(user_input, chat_history)
+                )
+
+                print(f"\nAssistant: {response_message}")
+
+                if transfer_note:
+                    print(f"\n{transfer_note}")
+
+                chat_history.append({"role": "user", "content": user_input})
+                chat_history.append({"role": "assistant", "content": response_message})
+
+                if reset_history:
+                    logger.info("Resetting chat history")
+                    chat_history = []
+
+            finally:
+                spinner.stop()
 
         except KeyboardInterrupt:
             print("\n\nThank you for shopping with us! Goodbye!")
