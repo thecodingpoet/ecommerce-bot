@@ -25,8 +25,6 @@ class Spinner:
             sys.stdout.write(f"\r{next(self.spinner)} {self.message}...")
             sys.stdout.flush()
             time.sleep(0.1)
-        sys.stdout.write("\r" + " " * (len(self.message) + 20) + "\r")
-        sys.stdout.flush()
 
     def start(self):
         """Start the spinner."""
@@ -39,3 +37,5 @@ class Spinner:
         self.running = False
         if self.thread:
             self.thread.join()
+        sys.stdout.write("\r" + " " * (len(self.message) + 20) + "\r")
+        sys.stdout.flush()

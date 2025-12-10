@@ -38,7 +38,7 @@ class ColoredFormatter(logging.Formatter):
         reset = self.COLORS["RESET"]
 
         record.levelname = f"{color}{icon} {record.levelname}{reset}"
-        return super().format(record)
+        return "\n" + super().format(record)
 
 
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:

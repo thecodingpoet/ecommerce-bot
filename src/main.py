@@ -25,9 +25,12 @@ def setup_logging(verbose: bool = False):
         Configured logger instance
     """
     log_level = logging.DEBUG if verbose else logging.WARNING
-    logging.getLogger().setLevel(log_level)
 
-    return setup_logger("ecommerce-cli", level=log_level)
+    root_logger = setup_logger("root", level=log_level)
+    logging.root.handlers = root_logger.handlers
+    logging.root.setLevel(log_level)
+
+    return root_logger
 
 
 def print_banner(verbose: bool = False):
@@ -86,20 +89,21 @@ def main(verbose: bool = False):
                     session.process_message(user_input, chat_history)
                 )
 
-                print(f"\nAssistant: {response_message}")
-
-                if transfer_note:
-                    print(f"\n{transfer_note}")
-
-                chat_history.append({"role": "user", "content": user_input})
-                chat_history.append({"role": "assistant", "content": response_message})
-
-                if reset_history:
-                    logger.info("Resetting chat history")
-                    chat_history = []
-
             finally:
                 spinner.stop()
+
+            # Print response after spinner is stopped
+            print(f"Assistant: {response_message}")
+
+            if transfer_note:
+                print(f"\n{transfer_note}")
+
+            chat_history.append({"role": "user", "content": user_input})
+            chat_history.append({"role": "assistant", "content": response_message})
+
+            if reset_history:
+                logger.info("Resetting chat history")
+                chat_history = []
 
         except KeyboardInterrupt:
             print("\n\nThank you for shopping with us! Goodbye!")

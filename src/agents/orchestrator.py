@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -8,11 +9,10 @@ from pydantic import BaseModel, Field
 
 from agents.order_agent import OrderAgent
 from agents.rag_agent import RAGAgent
-from utils.logger import setup_logger
 
 load_dotenv()
 
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorResponse(BaseModel):
