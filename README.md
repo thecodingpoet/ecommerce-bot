@@ -91,6 +91,23 @@ To start the main conversational assistant:
 uv run src/main.py
 ```
 
+#### Verbose Mode
+
+Enable verbose mode for debugging and detailed logging:
+
+```bash
+uv run src/main.py --verbose
+# or
+uv run src/main.py -v
+```
+
+Verbose mode provides:
+- DEBUG level logging for all components
+- Order mode state tracking
+- Chat history length monitoring
+- Full error tracebacks
+- Agent decision visibility
+
 ### Developer Console
 
 To access the interactive developer console for debugging and testing:
