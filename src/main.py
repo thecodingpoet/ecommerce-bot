@@ -15,22 +15,27 @@ from utils.spinner import Spinner
 load_dotenv()
 
 
-def setup_logging(verbose: bool = False):
-    """Configure logging based on verbosity level.
+def setup_logging(verbose: bool = False) -> logging.Logger:
+    """
+    Configure logging for all components.
 
     Args:
-        verbose: Enable DEBUG level logging if True, otherwise INFO
+        verbose: Enable verbose logging if True
 
     Returns:
-        Configured logger instance
+        Logger instance for CLI
     """
     log_level = logging.DEBUG if verbose else logging.WARNING
 
-    root_logger = setup_logger("root", level=log_level)
-    logging.root.handlers = root_logger.handlers
-    logging.root.setLevel(log_level)
+    for component in [
+        "agents.order_agent",
+        "agents.orchestrator",
+        "agents.rag_agent",
+        "database.products",
+    ]:
+        setup_logger(component, level=log_level)
 
-    return root_logger
+    return setup_logger("cli", level=log_level)
 
 
 def print_banner(verbose: bool = False):
