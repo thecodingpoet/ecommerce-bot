@@ -54,18 +54,29 @@ class ProductCatalog:
                 return product
         return None
 
-    def search_by_name(self, name: str) -> List[Dict]:
+    def get_product_by_id_or_name(self, query: str) -> Optional[Dict]:
         """
-        Search products by name (case-insensitive partial match).
+        Get product by exact ID or exact name (case-insensitive).
+
+        First attempts to match by exact product ID using get_product().
+        If no match is found, attempts to match by exact product name (case-insensitive).
 
         Args:
-            name: Product name to search for
+            query: Product identifier or exact product name
 
         Returns:
-            List of matching products
+            Product dict or None if not found
         """
-        name_lower = name.lower()
-        return [p for p in self._products if name_lower in p["name"].lower()]
+        product = self.get_product(query)
+        if product:
+            return product
+
+        query_lower = query.lower()
+        for product in self._products:
+            if product["name"].lower() == query_lower:
+                return product
+
+        return None
 
     def is_available(self, product_id: str) -> bool:
         """

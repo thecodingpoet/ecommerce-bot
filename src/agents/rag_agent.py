@@ -12,7 +12,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
-from database import ProductVectorStore
+from database import ProductCatalog, ProductVectorStore
 from schema import RAGResponse
 
 load_dotenv()
@@ -43,6 +43,16 @@ class RAGAgent:
         self.temperature = temperature
         self.k = k
         self.vector_store = ProductVectorStore().get()
+        self.product_catalog = ProductCatalog()
+
+        def format_stock_status(stock_status: str) -> str:
+            """Format stock status for display."""
+            status_map = {
+                "in_stock": "In Stock",
+                "low_stock": "Low Stock",
+                "out_of_stock": "Out of Stock",
+            }
+            return status_map.get(stock_status, stock_status)
 
         @tool
         def transfer_to_order_agent(reason: str) -> str:
@@ -70,37 +80,51 @@ class RAGAgent:
             """
             Retrieve product information to help answer customer queries.
 
-            Searches the product catalog using semantic similarity to find relevant products
-            based on the customer's question or search terms.
+            - If the query matches a product ID or exact name, return product details.
+            - Otherwise, perform semantic search and return a list of relevant products.
 
             Args:
-                query: The customer's search query or question about products
+                query: The customer's search query, product name, or product ID
 
             Returns:
                 Formatted product information
             """
-            logger.debug(f"Tool called: retrieve_products(query='{query}')")
+            # 1. Exact lookup (ID or exact name)
+            product = self.product_catalog.get_product_by_id_or_name(query)
+
+            if product:
+                name = product["name"]
+                pid = product["product_id"]
+                price = product["price"]
+                stock = format_stock_status(product["stock_status"])
+                description = product["description"]
+
+                logger.info(f"Exact product match found: {pid}")
+
+                return (
+                    f"**{name}** (ID: {pid})\n"
+                    f"Price: ${price:.2f} | Stock: {stock}\n"
+                    f"Description: {description}\n"
+                    f"How many units would you like to order?"
+                )
 
             results = self.vector_store.similarity_search(query, k=self.k)
 
             if not results:
-                serialized = "No products found matching the query."
-            else:
-                parts = ["Here are the relevant products:\n"]
-                for i, doc in enumerate(results, 1):
-                    parts.append(
-                        f"{i}. {doc.metadata.get('name')}\n"
-                        f"   ID: {doc.metadata.get('product_id')}\n"
-                        f"   Price: ${doc.metadata.get('price'):.2f}\n"
-                        f"   Category: {doc.metadata.get('category')}\n"
-                        f"   Stock: {doc.metadata.get('stock_status')}\n"
-                        f"   Description: {doc.page_content}\n"
-                    )
-                serialized = "\n".join(parts)
+                return "No products found matching your search."
 
-            logger.info(f"Retrieved {len(results)} products for query: '{query}'")
+            lines = []
+            for i, doc in enumerate(results, 1):
+                meta = doc.metadata
+                lines.append(
+                    f"{i}. **{meta['name']}** (ID: {meta['product_id']}) "
+                    f"- ${meta['price']:.2f} | {format_stock_status(meta['stock_status'])}"
+                )
 
-            return serialized
+            logger.info(
+                f"Semantic search returned {len(results)} results for '{query}'"
+            )
+            return "\n".join(lines)
 
         model = ChatOpenAI(model=model_name, temperature=temperature)
 
@@ -109,25 +133,30 @@ class RAGAgent:
             "\n\n"
             "TOOLS AVAILABLE:\n"
             "1. retrieve_products - Search our product catalog\n"
+            "   Use this tool to search for products by name, category, features, or product ID\n"
+            "   The tool automatically formats results appropriately:\n"
+            "   - For browsing/searching: Returns numbered list format\n"
+            "   - For specific product queries: Returns detailed product information\n"
+            "\n"
             "2. transfer_to_order_agent - Transfer customer to order specialist when they want to make a purchase\n"
             "\n"
             "WHEN TO TRANSFER:\n"
             "- Customer wants to buy, purchase, or order a product\n"
             "- Customer wants to add items to cart or checkout\n"
             "- Customer wants to complete a purchase\n"
-            "When transferring, set 'transfer_to_agent' to 'order' and include a friendly message in 'answer' like 'Let me connect you with our order specialist to complete your purchase.'\n"
+            "When transferring, set 'transfer_to_agent' to 'order' and include a friendly message like 'Let me connect you with our order specialist to complete your purchase.'\n"
             "\n"
             "RESPONSE FORMAT:\n"
             "You MUST provide a structured response with these fields:\n"
-            "- 'answer': A friendly, conversational response to the customer's query\n"
+            "- 'message': A friendly, conversational response to the customer's query\n"
             "- 'products': List of ALL relevant products from retrieved results (with complete details: product_id, name, description, price, category, stock_status)\n"
             "- 'transfer_to_agent': Set to 'order' when customer wants to purchase, otherwise None\n"
             "\n"
             "BEST PRACTICES:\n"
-            "- ALWAYS prominently display the Product ID in your answer (e.g., 'MacBook Pro 16-inch (ID: TECH-001)')\n"
+            "- ALWAYS prominently display the Product ID in your message (e.g., 'MacBook Pro 16-inch (ID: TECH-001)')\n"
             "- Format products clearly with ID first for easy reference when ordering\n"
             "- ONLY include products truly relevant to the query (e.g., for 'laptops', exclude accessories)\n"
-            "- Highlight price, category, and stock status in your answer\n"
+            "- Highlight price, category, and stock status in your message\n"
             "- Mention if products are out of stock and suggest alternatives\n"
             "- Remind customers to use the Product ID when placing orders\n"
             "- If no relevant products found, ask for clarification politely"
@@ -171,17 +200,27 @@ class RAGAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.error(f"Error invoking RAG agent: {e}")
+            logger.debug(f"Error invoking RAG agent: {e}")
             return RAGResponse(
-                answer="I encountered an error searching for products. Please try again.",
+                message="I encountered an error searching for products. Please try again.",
                 products=[],
             )
 
         structured_response = result.get("structured_response")
 
         if not structured_response:
-            logger.error("Agent did not return a structured response")
-            return RAGResponse(answer="I couldn't process that request.", products=[])
+            logger.debug(
+                "RAG Agent did not return a structured response - LLM may have had trouble determining intent"
+            )
+            return RAGResponse(
+                message=(
+                    "I'm having trouble understanding your search. Could you try rephrasing?\n"
+                    "• Try being more specific about what you're looking for\n"
+                    "• You can search by product name, category, or features\n"
+                    "• For example: 'show me laptops' or 'wireless headphones under $100'"
+                ),
+                products=[],
+            )
 
         logger.info(
             f"Successfully answered query with {len(structured_response.products)} products"

@@ -149,7 +149,6 @@ class OrderAgent:
             if not items_list or not isinstance(items_list, list):
                 return f"Error: Items must be a non-empty list."
 
-            # Validate all products and build order items
             order_items = []
             total = 0
             items_summary = []
@@ -181,7 +180,6 @@ class OrderAgent:
                     f"- {quantity}x {product['name']} @ ${product['price']:.2f} each = ${subtotal:.2f}"
                 )
 
-            # Create order
             order = self.order_db.create_order(
                 customer_name=customer_name,
                 customer_email=email,
@@ -294,7 +292,7 @@ class OrderAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.error(f"Error invoking order agent: {e}")
+            logger.debug(f"Error invoking order agent: {e}")
             return OrderResponse(
                 message="I encountered an error processing your order. Please try again.",
                 status="failed",
@@ -304,10 +302,18 @@ class OrderAgent:
         structured_response = result.get("structured_response")
 
         if not structured_response:
-            logger.error("Agent did not return a structured response")
+            logger.debug(
+                "Agent did not return a structured response - LLM may have had trouble determining intent"
+            )
+            # Provide a helpful fallback message that guides the user
             return OrderResponse(
-                message="I'm having trouble processing your order. Please try again.",
-                status="failed",
+                message=(
+                    "I'm not quite sure what you'd like to do. Could you clarify?\n"
+                    "• If you want to order a product, please provide the product ID (e.g., 'TECH-001') and quantity\n"
+                    "• If you want to search for products, I can help you browse our catalog\n"
+                    "• If you're continuing an order, please answer my previous question"
+                ),
+                status="collecting_info",
                 missing_fields=[],
             )
 

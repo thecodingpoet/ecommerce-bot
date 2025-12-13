@@ -119,10 +119,23 @@ class Orchestrator:
             "- Use place_order ONLY ONCE when users first express intent to buy/purchase/order "
             "- After calling place_order, DO NOT call it again - the order agent will handle the conversation "
             "- For greetings (hi, hello, hey), respond warmly and ask how you can help with products or orders "
-            "- For questions unrelated to products or orders (weather, news, general knowledge, etc.), politely decline: "
-            "  'I'm specialized in helping you find and purchase products. I can search our catalog or help you place an order. "
-            "  For other questions, please contact our customer support team. What products can I help you with today?' "
-            "- If the request is ambiguous, ask clarifying questions "
+            "\n\n"
+            "HANDLING AMBIGUOUS OR UNCLEAR QUERIES: "
+            "- If the query is ambiguous, unclear, or you cannot determine which agent should handle it, "
+            "  DO NOT call any tool. Instead, respond directly with clarifying questions. "
+            "- Examples of ambiguous queries: single numbers (e.g., '2'), vague terms, incomplete sentences, "
+            "  or queries that could refer to either product search or ordering "
+            "- Ask specific questions to understand the user's intent, such as: "
+            "  'I'd like to help you, but could you clarify what you're looking for? Are you trying to: "
+            "  (1) search for products, or (2) place an order? If ordering, do you have a specific product ID?' "
+            "\n\n"
+            "OUT-OF-SCOPE QUERIES: "
+            "- For questions unrelated to products or orders (weather, news, general knowledge, etc.), "
+            "  DO NOT call any tool. Politely decline directly: "
+            "'I'm specialized in helping you find and purchase products. I can search our catalog or help you place an order. "
+            "For other questions, please contact our customer support team. What products can I help you with today?' "
+            "\n\n"
+            "GENERAL GUIDELINES: "
             "- Always use tools for product/order requests - do not try to answer about products without using search_products "
             "- Be friendly, concise, and helpful"
         )
@@ -190,7 +203,7 @@ class Orchestrator:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.error(f"Error invoking orchestrator: {e}")
+            logger.debug(f"Error invoking orchestrator: {e}")
             return OrchestratorResponse(
                 message="I encountered an error processing your request. Please try again.",
                 agent_used="orchestrator",
@@ -199,9 +212,17 @@ class Orchestrator:
         structured_response = result.get("structured_response")
 
         if not structured_response:
-            logger.error("Orchestrator did not return a structured response")
+            logger.debug(
+                "Orchestrator did not return a structured response - LLM may have had trouble determining intent"
+            )
             return OrchestratorResponse(
-                message="I'm having trouble processing your request. Please try again.",
+                message=(
+                    "I'd like to help you, but could you clarify what you're looking for?\n\n"
+                    "Are you trying to:\n"
+                    "• Search for products in our catalog (e.g., 'show me laptops' or 'find wireless headphones')\n"
+                    "• Place an order (e.g., 'I want to buy TECH-007' or 'order 2 laptops')\n\n"
+                    "Please provide more details about what you'd like to do!"
+                ),
                 agent_used="orchestrator",
             )
 
