@@ -224,8 +224,7 @@ class OrderAgent:
                 f"Items:\n{items_text}\n\n"
                 f"Total: ${total:.2f}\n\n"
                 f"Shipping to: {shipping_address}\n\n"
-                f"You'll receive a confirmation email at {email}.\n"
-                f"Estimated delivery: 3-5 business days."
+                f"Your order has been confirmed! Order ID: {order.order_id}. Total: ${total:.2f}. Thank you!"
             )
 
         model = ChatOpenAI(model=model_name, temperature=temperature)
@@ -249,13 +248,17 @@ class OrderAgent:
             "   - Customer MUST provide exact product_id (e.g., 'TECH-001', 'HOME-004')\n"
             "   - If customer says product name without ID (e.g., 'MacBook'), politely ask for the product ID\n"
             "   - Example: 'I'd be happy to help you order the MacBook Pro! Could you please provide the product ID? You can find it in the product listing above.'\n"
+            "   - ALWAYS CLARIFY QUANTITY: If customer doesn't specify quantity, ask 'How many would you like to order?' before validation\n"
+            "   - If customer says 'I want product X' without quantity, assume they might want 1 but ALWAYS confirm: 'Would you like to order 1 unit, or a different quantity?'\n"
             "2. ASK TO ADD MORE: After each validation, ask 'Would you like to add anything else to your order?'\n"
             "3. COLLECT INFO: Once done shopping, collect - Name, Email, Full shipping address\n"
-            "4. CONFIRM: Show summary with ALL items and total, ask for confirmation\n"
+            "4. CONFIRM: Show summary with ALL items (with quantities) and total, ask for final confirmation\n"
             "5. CREATE: Use create_order with ALL items as JSON array\n"
             "\n"
             "IMPORTANT RULES:\n"
             "- Look in chat history to find product_id when customer mentions product by name\n"
+            "- ALWAYS clarify and confirm the quantity for each item before validation\n"
+            "- If quantity is not mentioned, explicitly ask 'How many would you like?' before proceeding\n"
             "- Validate ALL products before collecting customer info\n"
             "- After each validation, ask about adding more items\n"
             "- Support multiple items in a single order\n"
