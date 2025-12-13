@@ -89,7 +89,7 @@ def run_cli(verbose: bool = False):
             spinner.start()
 
             try:
-                logger.debug(f"Order mode: {orchestrator._in_order_mode}")
+                logger.debug(f"Orchestrator state: {orchestrator._state.value}")
                 logger.debug(f"Chat history length: {len(chat_history)}")
 
                 response = orchestrator.invoke(user_input, chat_history=chat_history)
@@ -142,7 +142,7 @@ def run_web_ui(
             return ""
 
         try:
-            logger.debug(f"Order mode: {orchestrator._in_order_mode}")
+            logger.debug(f"Orchestrator state: {orchestrator._state.value}")
             logger.debug(f"Chat history length: {len(chat_history)}")
 
             response = orchestrator.invoke(message, chat_history=chat_history)
