@@ -96,7 +96,6 @@ class RAGAgent:
             Returns:
                 Formatted product information
             """
-            # 1. Exact lookup (ID or exact name)
             product = self.product_catalog.get_product_by_id_or_name(query)
 
             if product:

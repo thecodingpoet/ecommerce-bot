@@ -1,16 +1,18 @@
 """
-E-commerce chatbot CLI.
+E-commerce chatbot CLI and Web UI.
 Interactive assistant for product search and order placement.
 """
 
 import argparse
 import logging
+from typing import List
 
 from dotenv import load_dotenv
 
 from agents.orchestrator import Orchestrator
 from utils.logger import setup_logger
 from utils.spinner import Spinner
+import gradio as gr
 
 load_dotenv()
 
@@ -38,33 +40,33 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return setup_logger("cli", level=log_level)
 
 
-def print_banner(verbose: bool = False):
-    """Print welcome banner with application info and commands.
-
-    Args:
-        verbose: Whether verbose mode is enabled
-    """
-    print("\n" + "=" * 70)
-    print("🛍️  Welcome to Our E-Commerce Store!")
-    print("=" * 70)
-    print("I'm your AI shopping assistant. I can help you:")
-    print("  • Search and browse products")
-    print("  • Get detailed product information")
-    print("  • Place orders with ease")
-    print()
-    print("Commands:")
-    print("  • Type 'exit' or 'quit' to end the conversation")
-    if verbose:
-        print("  • Verbose mode is enabled - debug info will be shown")
-    print("=" * 70)
-
-
-def main(verbose: bool = False):
-    """Main CLI - E-commerce assistant with product search and ordering.
+def run_cli(verbose: bool = False):
+    """Run CLI interface - E-commerce assistant with product search and ordering.
 
     Args:
         verbose: Enable verbose output for debugging
     """
+
+    def print_banner(verbose: bool = False):
+        """Print welcome banner with application info and commands.
+
+        Args:
+            verbose: Whether verbose mode is enabled
+        """
+        print("\n" + "=" * 70)
+        print("🛍️  Welcome to Our E-Commerce Store!")
+        print("=" * 70)
+        print("I'm your AI shopping assistant. I can help you:")
+        print("  • Search and browse products")
+        print("  • Get detailed product information")
+        print("  • Place orders with ease")
+        print()
+        print("Commands:")
+        print("  • Type 'exit' or 'quit' to end the conversation")
+        if verbose:
+            print("  • Verbose mode is enabled - debug info will be shown")
+        print("=" * 70)
+
     logger = setup_logging(verbose)
 
     orchestrator = Orchestrator()
@@ -112,14 +114,133 @@ def main(verbose: bool = False):
             print("Please try again.")
 
 
+def run_web_ui(
+    verbose: bool = False, server_port: int = 7860, server_name: str = "127.0.0.1"
+):
+    """Run web UI using Gradio - E-commerce assistant with product search and ordering.
+
+    Args:
+        verbose: Enable verbose output for debugging
+        server_port: Port to run the Gradio server on
+        server_name: Hostname/IP to bind the server to
+    """
+    logger = setup_logging(verbose)
+    orchestrator = Orchestrator()
+    chat_history = []
+
+    def chat_fn(message: str, history: List[List[str]]) -> str:
+        """Handle chat messages from Gradio interface.
+
+        Args:
+            message: User's message
+            history: Chat history in Gradio format (ignored - we use our own)
+
+        Returns:
+            Assistant's response
+        """
+        if not message.strip():
+            return ""
+
+        try:
+            logger.debug(f"Order mode: {orchestrator._in_order_mode}")
+            logger.debug(f"Chat history length: {len(chat_history)}")
+
+            response = orchestrator.invoke(message, chat_history=chat_history)
+            response_message = response.message
+
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": response_message})
+
+            return response_message
+
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            if verbose:
+                logger.exception("Full traceback:")
+            return f"❌ Error: {e}\nPlease try again."
+
+    chatbot = gr.Chatbot(
+        height=700,
+        min_height=500,
+        max_height=1000,
+        show_label=False,
+    )
+
+    with gr.Blocks() as demo:
+        gr.ChatInterface(
+            fn=chat_fn,
+            title="🛍️ Shopping Assistant",
+            description="I can help you search products, get product details, and place orders. Just ask!",
+            chatbot=chatbot,
+            autoscroll=True,
+        )
+
+    print(f"\n🚀 Starting web UI on http://{server_name}:{server_port}")
+    print("Press Ctrl+C to stop the server\n")
+
+    demo.launch(
+        server_port=server_port,
+        server_name=server_name,
+        inbrowser=True,
+        theme=gr.themes.Citrus(),
+        css="""
+            footer {
+                display: none !important;
+            }
+        """,
+    )
+
+
+def main(ui: bool = False, verbose: bool = False, port: int = 7860):
+    """Main entry point - E-commerce assistant with product search and ordering.
+
+    Args:
+        ui: Launch web UI instead of CLI
+        verbose: Enable verbose output for debugging
+        port: Port for web UI (only used if ui=True)
+    """
+    if ui:
+        run_web_ui(verbose=verbose, server_port=port)
+    else:
+        run_cli(verbose=verbose)
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="E-commerce chatbot CLI")
+    parser = argparse.ArgumentParser(
+        description="E-commerce chatbot CLI and Web UI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+        Examples:
+          # Run CLI interface (default)
+            python src/main.py
+
+          # Run CLI with verbose logging
+            python src/main.py --verbose
+
+          # Run web UI
+            python src/main.py --ui
+
+          # Run web UI on custom port
+            python src/main.py --ui --port 8080
+        """,
+    )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Enable verbose output for debugging",
     )
+    parser.add_argument(
+        "--ui",
+        action="store_true",
+        help="Launch web UI instead of CLI",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7860,
+        help="Port for web UI (default: 7860)",
+    )
     args = parser.parse_args()
 
-    main(verbose=args.verbose)
+    main(ui=args.ui, verbose=args.verbose, port=args.port)

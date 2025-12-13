@@ -12,6 +12,8 @@ An intelligent AI chatbot for e-commerce that handles product inquiries and orde
 ## Features
 
 - **🤖 Conversational AI**: Natural language interface for product search and ordering
+- **🌐 Web UI**: Modern Gradio-based web interface with auto-scrolling chat window
+- **💻 CLI Interface**: Command-line interface for terminal-based interactions
 - **🔍 Intelligent Product Search**: RAG-powered semantic search across product catalog using ChromaDB
 - **🛒 Seamless Order Processing**: Conversational checkout that collects customer details naturally through dialogue
 - **🧠 Multi-Agent Architecture**: Specialized agents (Orchestrator, RAG, Order) working in concert
@@ -85,20 +87,49 @@ uv run src/initialize_vector_store.py
 
 ### Running the Chat Interface
 
-To start the main conversational assistant:
+The application supports both CLI and Web UI interfaces:
+
+#### Command-Line Interface (CLI)
+
+To start the CLI conversational assistant:
 
 ```bash
 uv run src/main.py
 ```
 
-#### Verbose Mode
+#### Web UI
 
-Enable verbose mode for debugging and detailed logging:
+To launch the web-based interface:
 
 ```bash
+uv run src/main.py --ui
+```
+
+The web UI will:
+- Automatically open in your default browser
+- Run on `http://127.0.0.1:7860` by default
+- Provide a modern chat interface with auto-scrolling
+
+**Custom Port:**
+
+Run the web UI on a custom port:
+
+```bash
+uv run src/main.py --ui --port 8080
+```
+
+#### Verbose Mode
+
+Enable verbose mode for debugging and detailed logging (works with both CLI and UI):
+
+```bash
+# CLI with verbose
 uv run src/main.py --verbose
-# or
-uv run src/main.py -v
+
+# Web UI with verbose
+uv run src/main.py --ui --verbose
+# or use short form
+uv run src/main.py --ui -v
 ```
 
 Verbose mode provides:
@@ -107,6 +138,23 @@ Verbose mode provides:
 - Chat history length monitoring
 - Full error tracebacks
 - Agent decision visibility
+
+#### Command-Line Options
+
+```bash
+# Show help
+uv run src/main.py --help
+
+# CLI options
+uv run src/main.py                    # Run CLI (default)
+uv run src/main.py --verbose          # CLI with verbose logging
+uv run src/main.py -v                 # Short form for verbose
+
+# Web UI options
+uv run src/main.py --ui               # Run web UI on default port (7860)
+uv run src/main.py --ui --port 8080   # Run web UI on custom port
+uv run src/main.py --ui --verbose     # Web UI with verbose logging
+```
 
 ### Developer Console
 
