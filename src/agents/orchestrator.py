@@ -199,7 +199,7 @@ class Orchestrator:
             response_format=OrchestratorResponse,
             middleware=[
                 ModelCallLimitMiddleware(
-                    run_limit=10,
+                    run_limit=3,
                     exit_behavior="end",
                 )
             ],
@@ -257,30 +257,11 @@ class Orchestrator:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            is_timeout = (
-                isinstance(e, TimeoutError)
-                or "timeout" in type(e).__name__.lower()
-                or "timeout" in str(e).lower()
+            logger.error(f"Error invoking orchestrator: {e}", exc_info=True)
+            return OrchestratorResponse(
+                message="I encountered an error processing your request. Please try again.",
+                agent_used="orchestrator",
             )
-
-            if is_timeout:
-                logger.warning(
-                    f"Timeout exceeded ({self.timeout}s) in orchestrator: {e}"
-                )
-                return OrchestratorResponse(
-                    message=(
-                        "I'm taking longer than expected to process your request. "
-                        "This might be due to high demand. Could you please try again "
-                        "or rephrase your question?"
-                    ),
-                    agent_used="orchestrator",
-                )
-            else:
-                logger.error(f"Error invoking orchestrator: {e}", exc_info=True)
-                return OrchestratorResponse(
-                    message="I encountered an error processing your request. Please try again.",
-                    agent_used="orchestrator",
-                )
 
         structured_response = result.get("structured_response")
 

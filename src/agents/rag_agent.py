@@ -8,7 +8,10 @@ from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
@@ -175,9 +178,13 @@ class RAGAgent:
             response_format=RAGResponse,
             middleware=[
                 ModelCallLimitMiddleware(
-                    run_limit=10,
+                    run_limit=5,
                     exit_behavior="end",
-                )
+                ),
+                ToolCallLimitMiddleware(
+                    tool_name="retrieve_products",
+                    run_limit=3,
+                ),
             ],
         )
 
@@ -206,28 +213,11 @@ class RAGAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            is_timeout = (
-                isinstance(e, TimeoutError)
-                or "timeout" in type(e).__name__.lower()
-                or "timeout" in str(e).lower()
+            logger.error(f"Error invoking RAG agent: {e}", exc_info=True)
+            return RAGResponse(
+                message="I encountered an error searching for products. Please try again.",
+                products=[],
             )
-
-            if is_timeout:
-                logger.warning(f"Timeout exceeded ({self.timeout}s) in RAG agent: {e}")
-                return RAGResponse(
-                    message=(
-                        "Searching our catalog is taking longer than usual. "
-                        "This might be due to high traffic. Please try your search again, "
-                        "or try being more specific about what you're looking for."
-                    ),
-                    products=[],
-                )
-            else:
-                logger.error(f"Error invoking RAG agent: {e}", exc_info=True)
-                return RAGResponse(
-                    message="I encountered an error searching for products. Please try again.",
-                    products=[],
-                )
 
         structured_response = result.get("structured_response")
 

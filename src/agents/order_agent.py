@@ -9,7 +9,10 @@ from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
@@ -283,9 +286,17 @@ class OrderAgent:
             response_format=OrderResponse,
             middleware=[
                 ModelCallLimitMiddleware(
-                    run_limit=15,
+                    run_limit=10,
                     exit_behavior="end",
-                )
+                ),
+                ToolCallLimitMiddleware(
+                    tool_name="validate_product",
+                    run_limit=5,
+                ),
+                ToolCallLimitMiddleware(
+                    tool_name="create_order",
+                    run_limit=1,
+                ),
             ],
         )
 
@@ -314,33 +325,12 @@ class OrderAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            is_timeout = (
-                isinstance(e, TimeoutError)
-                or "timeout" in type(e).__name__.lower()
-                or "timeout" in str(e).lower()
+            logger.error(f"Error invoking order agent: {e}", exc_info=True)
+            return OrderResponse(
+                message="I encountered an error processing your order. Please try again.",
+                status="failed",
+                missing_fields=[],
             )
-
-            if is_timeout:
-                logger.warning(
-                    f"Timeout exceeded ({self.timeout}s) in order agent: {e}"
-                )
-                return OrderResponse(
-                    message=(
-                        "I'm having trouble processing your order right now - "
-                        "the request is taking too long. Please try again in a moment. "
-                        "If the issue persists, you can also provide your order details "
-                        "step by step."
-                    ),
-                    status="failed",
-                    missing_fields=[],
-                )
-            else:
-                logger.error(f"Error invoking order agent: {e}", exc_info=True)
-                return OrderResponse(
-                    message="I encountered an error processing your order. Please try again.",
-                    status="failed",
-                    missing_fields=[],
-                )
 
         structured_response = result.get("structured_response")
 
