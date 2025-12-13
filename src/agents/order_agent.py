@@ -5,43 +5,20 @@ Uses LangChain's agent pattern with tools for order operations.
 
 import json
 import logging
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 from database import OrderDatabase, ProductCatalog
+from schema import OrderResponse
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-
-class OrderResponse(BaseModel):
-    """Structured response from Order Agent."""
-
-    message: str = Field(description="Natural language response to customer")
-    status: Literal["collecting_info", "confirming", "completed", "failed"] = Field(
-        description="Current status of order process"
-    )
-    missing_fields: List[str] = Field(
-        default_factory=list,
-        description="List of missing required fields (e.g., 'quantity', 'email')",
-    )
-    order_summary: Optional[dict] = Field(
-        None, description="Order summary when ready to confirm"
-    )
-    order_id: Optional[str] = Field(
-        None, description="Order ID after successful creation"
-    )
-    transfer_to_agent: Optional[str] = Field(
-        None,
-        description="Agent to transfer to: 'rag' for product search, or None to continue with Order Agent",
-    )
 
 
 class OrderAgent:

@@ -6,23 +6,14 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 from agents.order_agent import OrderAgent
 from agents.rag_agent import RAGAgent
+from schema import OrchestratorResponse
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-
-class OrchestratorResponse(BaseModel):
-    """Structured response from Orchestrator."""
-
-    message: str = Field(description="Response to the user")
-    agent_used: str = Field(
-        description="Which agent handled the request: 'rag', 'order', or 'orchestrator'"
-    )
 
 
 class Orchestrator:
@@ -71,7 +62,7 @@ class Orchestrator:
 
             result = self.rag_agent.invoke(request, chat_history=self._chat_history)
 
-            response = result.answer
+            response = result.message
             if result.products:
                 response += f"\n\n[Retrieved {len(result.products)} products]"
 
@@ -188,7 +179,7 @@ class Orchestrator:
                         user_query, chat_history=self._chat_history
                     )
                     return OrchestratorResponse(
-                        message=rag_result.answer, agent_used="rag"
+                        message=rag_result.message, agent_used="rag"
                     )
 
             return OrchestratorResponse(message=result.message, agent_used="order")

@@ -11,37 +11,13 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 from database import ProductVectorStore
+from schema import RAGResponse
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-
-class ProductInfo(BaseModel):
-    """Structured product information returned by the agent."""
-
-    product_id: str = Field(description="Unique product identifier")
-    name: str = Field(description="Product name")
-    description: str = Field(description="Product description")
-    price: float = Field(description="Product price in dollars")
-    category: str = Field(description="Product category")
-    stock_status: str = Field(description="Stock availability status")
-
-
-class RAGResponse(BaseModel):
-    """Structured response from the RAG agent."""
-
-    answer: str = Field(description="Natural language answer to the user's query")
-    products: List[ProductInfo] = Field(
-        default_factory=list, description="List of relevant products found"
-    )
-    transfer_to_agent: Optional[str] = Field(
-        None,
-        description="Agent to transfer to: 'order' to handle purchases, or None to stay with RAG agent",
-    )
 
 
 class RAGAgent:
