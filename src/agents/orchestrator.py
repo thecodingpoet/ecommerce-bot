@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
@@ -140,6 +141,12 @@ class Orchestrator:
             tools=[search_products, place_order],
             system_prompt=system_prompt,
             response_format=OrchestratorResponse,
+            middleware=[
+                ModelCallLimitMiddleware(
+                    run_limit=10,
+                    exit_behavior="end",
+                )
+            ],
         )
 
         logger.info(
@@ -189,7 +196,14 @@ class Orchestrator:
         messages = self._chat_history.copy()
         messages.append({"role": "user", "content": user_query})
 
-        result = self.agent.invoke({"messages": messages})
+        try:
+            result = self.agent.invoke({"messages": messages})
+        except Exception as e:
+            logger.error(f"Error invoking orchestrator: {e}")
+            return OrchestratorResponse(
+                message="I encountered an error processing your request. Please try again.",
+                agent_used="orchestrator",
+            )
 
         structured_response = result.get("structured_response")
 

@@ -8,7 +8,7 @@ import logging
 
 from dotenv import load_dotenv
 
-from chatbot import ChatbotSession
+from agents.orchestrator import Orchestrator
 from utils.logger import setup_logger
 from utils.spinner import Spinner
 
@@ -62,7 +62,7 @@ def main(verbose: bool = False):
     """
     logger = setup_logging(verbose)
 
-    session = ChatbotSession()
+    orchestrator = Orchestrator()
     chat_history = []
 
     print_banner(verbose)
@@ -82,28 +82,19 @@ def main(verbose: bool = False):
             spinner.start()
 
             try:
-                logger.debug(f"Order mode: {session.orchestrator._in_order_mode}")
+                logger.debug(f"Order mode: {orchestrator._in_order_mode}")
                 logger.debug(f"Chat history length: {len(chat_history)}")
 
-                response_message, reset_history, transfer_note = (
-                    session.process_message(user_input, chat_history)
-                )
+                response = orchestrator.invoke(user_input, chat_history=chat_history)
+                response_message = response.message
 
             finally:
                 spinner.stop()
 
-            # Print response after spinner is stopped
             print(f"Assistant: {response_message}")
-
-            if transfer_note:
-                print(f"\n{transfer_note}")
 
             chat_history.append({"role": "user", "content": user_input})
             chat_history.append({"role": "assistant", "content": response_message})
-
-            if reset_history:
-                logger.info("Resetting chat history")
-                chat_history = []
 
         except KeyboardInterrupt:
             print("\n\nThank you for shopping with us! Goodbye!")
