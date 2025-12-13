@@ -183,6 +183,25 @@ class OrderDatabase:
         finally:
             session.close()
 
+    def get_last_order(self) -> Optional[Order]:
+        """Retrieve the most recently created order.
+
+        Returns:
+            Most recent Order object if found, None otherwise
+        """
+        session = self._get_session()
+        try:
+            order = (
+                session.query(Order)
+                .order_by(Order.created_at.desc())
+                .first()
+            )
+            if order:
+                _ = order.items
+            return order
+        finally:
+            session.close()
+
     def get_orders_by_email(self, email: str) -> List[Order]:
         """Retrieve all orders for a specific customer email.
 

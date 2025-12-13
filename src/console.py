@@ -61,11 +61,13 @@ Database methods (use db.):
   get_order_by_id(order_id)
   get_all_orders()
   get_orders_by_email(email)
+  get_last_order()
   update_order_status(order_id, status)
   delete_order(order_id)
   get_order_count()
 
 Examples:
+  >>> db.get_last_order()
   >>> db.get_all_orders()
   >>> find_product("macbook")
   >>> create_test_order()
@@ -76,7 +78,6 @@ Type 'exit()' or Ctrl+D to quit.
 
 print(banner)
 
-# Try to use IPython if available, fall back to standard Python console
 try:
     from IPython import embed
 
