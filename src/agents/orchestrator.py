@@ -25,21 +25,32 @@ class Orchestrator:
     - Order/purchase requests → Order Agent
     """
 
-    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0):
+    def __init__(
+        self,
+        model_name: str = "gpt-4o-mini",
+        temperature: float = 0,
+        timeout: int = 30,
+    ):
         """
         Initialize the Orchestrator.
 
         Args:
             model_name: OpenAI model to use
             temperature: Sampling temperature
+            timeout: Request timeout in seconds (default: 30)
         """
         self.model_name = model_name
         self.temperature = temperature
+        self.timeout = timeout
         self._chat_history = []
         self._in_order_mode = False
 
-        self.rag_agent = RAGAgent(model_name=model_name, temperature=temperature)
-        self.order_agent = OrderAgent(model_name=model_name, temperature=temperature)
+        self.rag_agent = RAGAgent(
+            model_name=model_name, temperature=temperature, timeout=timeout
+        )
+        self.order_agent = OrderAgent(
+            model_name=model_name, temperature=temperature, timeout=timeout
+        )
 
         @tool
         def search_products(request: str) -> str:
@@ -106,7 +117,7 @@ class Orchestrator:
 
             return result.message
 
-        model = ChatOpenAI(model=model_name, temperature=temperature)
+        model = ChatOpenAI(model=model_name, temperature=temperature, timeout=timeout)
 
         system_prompt = (
             "You are a helpful e-commerce assistant that helps customers find and purchase products. "
@@ -154,7 +165,7 @@ class Orchestrator:
         )
 
         logger.info(
-            f"Orchestrator initialized with model={model_name}, temperature={temperature}"
+            f"Orchestrator initialized with model={model_name}, temperature={temperature}, timeout={timeout}s"
         )
 
     def invoke(
@@ -203,11 +214,30 @@ class Orchestrator:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.debug(f"Error invoking orchestrator: {e}")
-            return OrchestratorResponse(
-                message="I encountered an error processing your request. Please try again.",
-                agent_used="orchestrator",
+            is_timeout = (
+                isinstance(e, TimeoutError)
+                or "timeout" in type(e).__name__.lower()
+                or "timeout" in str(e).lower()
             )
+
+            if is_timeout:
+                logger.warning(
+                    f"Timeout exceeded ({self.timeout}s) in orchestrator: {e}"
+                )
+                return OrchestratorResponse(
+                    message=(
+                        "I'm taking longer than expected to process your request. "
+                        "This might be due to high demand. Could you please try again "
+                        "or rephrase your question?"
+                    ),
+                    agent_used="orchestrator",
+                )
+            else:
+                logger.error(f"Error invoking orchestrator: {e}", exc_info=True)
+                return OrchestratorResponse(
+                    message="I encountered an error processing your request. Please try again.",
+                    agent_used="orchestrator",
+                )
 
         structured_response = result.get("structured_response")
 

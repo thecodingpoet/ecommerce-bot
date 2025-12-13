@@ -29,16 +29,23 @@ class OrderAgent:
     and order creation.
     """
 
-    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0):
+    def __init__(
+        self,
+        model_name: str = "gpt-4o-mini",
+        temperature: float = 0,
+        timeout: int = 30,
+    ):
         """
         Initialize the Order Agent.
 
         Args:
             model_name: OpenAI model to use (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
+            timeout: Request timeout in seconds (default: 30)
         """
         self.model_name = model_name
         self.temperature = temperature
+        self.timeout = timeout
         self.catalog = ProductCatalog()
         self.order_db = OrderDatabase()
 
@@ -203,7 +210,7 @@ class OrderAgent:
                 f"Your order has been confirmed! Order ID: {order.order_id}. Total: ${total:.2f}. Thank you!"
             )
 
-        model = ChatOpenAI(model=model_name, temperature=temperature)
+        model = ChatOpenAI(model=model_name, temperature=temperature, timeout=timeout)
 
         system_prompt = (
             "You are a helpful order assistant for an e-commerce store. Your role is to help customers place orders. "
@@ -268,7 +275,7 @@ class OrderAgent:
         )
 
         logger.info(
-            f"Order Agent initialized with model={model_name}, temperature={temperature}"
+            f"Order Agent initialized with model={model_name}, temperature={temperature}, timeout={timeout}s"
         )
 
     def invoke(
@@ -292,12 +299,33 @@ class OrderAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.debug(f"Error invoking order agent: {e}")
-            return OrderResponse(
-                message="I encountered an error processing your order. Please try again.",
-                status="failed",
-                missing_fields=[],
+            is_timeout = (
+                isinstance(e, TimeoutError)
+                or "timeout" in type(e).__name__.lower()
+                or "timeout" in str(e).lower()
             )
+
+            if is_timeout:
+                logger.warning(
+                    f"Timeout exceeded ({self.timeout}s) in order agent: {e}"
+                )
+                return OrderResponse(
+                    message=(
+                        "I'm having trouble processing your order right now - "
+                        "the request is taking too long. Please try again in a moment. "
+                        "If the issue persists, you can also provide your order details "
+                        "step by step."
+                    ),
+                    status="failed",
+                    missing_fields=[],
+                )
+            else:
+                logger.error(f"Error invoking order agent: {e}", exc_info=True)
+                return OrderResponse(
+                    message="I encountered an error processing your order. Please try again.",
+                    status="failed",
+                    missing_fields=[],
+                )
 
         structured_response = result.get("structured_response")
 

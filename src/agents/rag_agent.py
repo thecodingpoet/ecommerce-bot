@@ -12,6 +12,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
+
 from database import ProductCatalog, ProductVectorStore
 from schema import RAGResponse
 
@@ -29,7 +30,11 @@ class RAGAgent:
     """
 
     def __init__(
-        self, model_name: str = "gpt-4o-mini", temperature: float = 0, k: int = 5
+        self,
+        model_name: str = "gpt-4o-mini",
+        temperature: float = 0,
+        k: int = 5,
+        timeout: int = 30,
     ):
         """
         Initialize the RAG Agent.
@@ -38,10 +43,12 @@ class RAGAgent:
             model_name: OpenAI model to use for generation (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
             k: Number of products to retrieve from vector store
+            timeout: Request timeout in seconds (default: 30)
         """
         self.model_name = model_name
         self.temperature = temperature
         self.k = k
+        self.timeout = timeout
         self.vector_store = ProductVectorStore().get()
         self.product_catalog = ProductCatalog()
 
@@ -126,7 +133,7 @@ class RAGAgent:
             )
             return "\n".join(lines)
 
-        model = ChatOpenAI(model=model_name, temperature=temperature)
+        model = ChatOpenAI(model=model_name, temperature=temperature, timeout=timeout)
 
         system_prompt = (
             "You are a helpful e-commerce product assistant. Your role is to help customers find products and answer questions about them. "
@@ -176,7 +183,7 @@ class RAGAgent:
         )
 
         logger.info(
-            f"RAG Agent initialized with model={model_name}, temperature={temperature}, k={k}"
+            f"RAG Agent initialized with model={model_name}, temperature={temperature}, k={k}, timeout={timeout}s"
         )
 
     def invoke(
@@ -200,11 +207,28 @@ class RAGAgent:
         try:
             result = self.agent.invoke({"messages": messages})
         except Exception as e:
-            logger.debug(f"Error invoking RAG agent: {e}")
-            return RAGResponse(
-                message="I encountered an error searching for products. Please try again.",
-                products=[],
+            is_timeout = (
+                isinstance(e, TimeoutError)
+                or "timeout" in type(e).__name__.lower()
+                or "timeout" in str(e).lower()
             )
+
+            if is_timeout:
+                logger.warning(f"Timeout exceeded ({self.timeout}s) in RAG agent: {e}")
+                return RAGResponse(
+                    message=(
+                        "Searching our catalog is taking longer than usual. "
+                        "This might be due to high traffic. Please try your search again, "
+                        "or try being more specific about what you're looking for."
+                    ),
+                    products=[],
+                )
+            else:
+                logger.error(f"Error invoking RAG agent: {e}", exc_info=True)
+                return RAGResponse(
+                    message="I encountered an error searching for products. Please try again.",
+                    products=[],
+                )
 
         structured_response = result.get("structured_response")
 
