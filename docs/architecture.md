@@ -52,7 +52,10 @@ The central brain of the system. It acts as a router, directing user intents to 
 ### B. Specialized Agents
 1.  **RAG Agent (`src/agents/rag_agent.py`)**
     -   **Purpose:** Answers questions about products.
-    -   **Mechanism:** Uses Retrieval-Augmented Generation (RAG). It queries ChromaDB to find relevant product chunks and synthesizes an answer.
+    -   **Mechanism:** Uses Retrieval-Augmented Generation (RAG) with **hybrid search**:
+        -   **Exact Match First:** Attempts exact matching by product ID or exact product name (case-insensitive)
+        -   **Semantic Fallback:** If no exact match, performs semantic similarity search using ChromaDB vector embeddings
+        -   This hybrid approach ensures precise results for known products while maintaining flexibility for natural language queries
     -   **Tools:** `retrieve_products`, `transfer_to_order_agent`.
 
 2.  **Order Agent (`src/agents/order_agent.py`)**
@@ -64,7 +67,9 @@ The central brain of the system. It acts as a router, directing user intents to 
 ### C. Data Layer
 1.  **Product Catalog (`src/database/products.py`)**
     -   **Source:** `data/products.json`.
-    -   **Vector Store:** Manages embeddings in ChromaDB for semantic search.
+    -   **Exact Matching:** Provides exact product lookup by ID or name for precise queries.
+    -   **Vector Store:** Manages embeddings in ChromaDB for semantic similarity search.
+    -   **Hybrid Search:** The RAG agent combines both approaches - exact matching for known products, semantic search for natural language queries.
 2.  **Order Management (`src/database/orders.py`)**
     -   **Storage:** SQLite database (`data/ecommerce.db`).
     -   **ORM:** SQLAlchemy models for `Order` and `OrderItem`.
@@ -76,7 +81,7 @@ The central brain of the system. It acts as a router, directing user intents to 
 3.  **Orchestrator** evaluates current state:
     -   **If state is `ORDER_LOCKED`**: Routes directly to **Order Agent** (bypasses intent classification).
     -   **If state is `SEARCH`**: Uses LLM classifier to determine intent:
-        -   *Product Intent* -> **RAG Agent** -> Vector Search -> Response.
+        -   *Product Intent* -> **RAG Agent** -> Hybrid Search (exact match first, then semantic) -> Response.
         -   *Purchase Intent* -> **Order Agent** -> Sets state to `ORDER_LOCKED` -> Validation -> Response.
 4.  **Agents** return structured responses with status information.
 5.  **Orchestrator** processes responses and updates state:
