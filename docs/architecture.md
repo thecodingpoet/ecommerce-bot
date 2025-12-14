@@ -48,6 +48,7 @@ The central brain of the system. It acts as a router, directing user intents to 
     -   `SEARCH`: Default state, routes queries to appropriate agent based on intent classification
     -   `ORDER_LOCKED`: Locks the conversation to the Order Agent during an active transaction, preventing context switching until the order is complete or explicitly transferred
     -   State transitions are handled via `should_exit_order_mode()` which evaluates OrderAgent responses to determine when to return to `SEARCH` state
+-   **Cart Management:** Maintains an in-memory shopping cart (`self._cart`) as a list of cart items. The cart persists during the conversation session and is cleared after successful order creation. Cart items contain: `product_id`, `product_name`, `quantity`, `unit_price`.
 
 ### B. Specialized Agents
 1.  **RAG Agent (`src/agents/rag_agent.py`)**
@@ -61,7 +62,8 @@ The central brain of the system. It acts as a router, directing user intents to 
 2.  **Order Agent (`src/agents/order_agent.py`)**
     -   **Purpose:** Handles the checkout process.
     -   **Mechanism:** A stateful agent that collects user details, validates stock, and creates orders.
-    -   **Tools:** `validate_product`, `create_order`, `transfer_to_rag_agent`.
+    -   **Tools:** `add_to_cart`, `remove_from_cart`, `view_cart`, `create_order`, `transfer_to_rag_agent`.
+    -   **Cart Management:** Uses an in-memory cart (stored in Orchestrator) to track items before checkout.
     -   **Protocol:** Uses structured outputs (`OrderResponse`) to communicate status (`collecting_info`, `confirming`, `completed`) back to the orchestrator.
 
 ### C. Data Layer
@@ -82,14 +84,19 @@ The central brain of the system. It acts as a router, directing user intents to 
     -   **If state is `ORDER_LOCKED`**: Routes directly to **Order Agent** (bypasses intent classification).
     -   **If state is `SEARCH`**: Uses LLM classifier to determine intent:
         -   *Product Intent* -> **RAG Agent** -> Hybrid Search (exact match first, then semantic) -> Response.
-        -   *Purchase Intent* -> **Order Agent** -> Sets state to `ORDER_LOCKED` -> Validation -> Response.
-4.  **Agents** return structured responses with status information.
-5.  **Orchestrator** processes responses and updates state:
+        -   *Purchase Intent* -> **Order Agent** -> Sets state to `ORDER_LOCKED` -> Cart operations -> Response.
+4.  **Order Agent** processes purchase requests:
+    -   Uses `add_to_cart` to validate and store items in Orchestrator's cart
+    -   Uses `view_cart` to show cart contents when requested
+    -   Collects customer information (name, email, address)
+    -   Uses `create_order` which reads from cart and clears it after success
+5.  **Agents** return structured responses with status information.
+6.  **Orchestrator** processes responses and updates state:
     -   Evaluates `OrderAgent` status via `should_exit_order_mode()`:
-        -   Order completed/failed → Transition to `SEARCH`
-        -   Transfer request to RAG → Transition to `SEARCH`
+        -   Order completed/failed → Transition to `SEARCH` (cart cleared on success)
+        -   Transfer request to RAG → Transition to `SEARCH` (cart preserved)
         -   Otherwise → Remain in `ORDER_LOCKED`
-6.  **Orchestrator** formats and returns final response to user.
+7.  **Orchestrator** formats and returns final response to user.
 
 ## 5. State Management Details
 
@@ -121,3 +128,52 @@ flowchart TD
 -   Clear state transitions with centralized logic
 -   Better debugging (explicit state names in logs)
 -   Easy to extend with additional states if needed
+
+## 6. Cart Architecture & Tradeoffs
+
+### Cart Implementation
+
+The system uses an **in-memory cart** stored in the Orchestrator (`self._cart`). This cart is:
+-   **Session-scoped:** Persists during the conversation, cleared when order completes
+-   **Simple structure:** List of dictionaries with `product_id`, `product_name`, `quantity`, `unit_price`
+-   **Shared with Order Agent:** Cart reference is passed to Order Agent, allowing direct manipulation
+
+### Cart Tools
+
+The Order Agent provides four cart-related tools:
+
+1.  **`add_to_cart(product_id, quantity)`**
+    -   Validates product (existence, availability, stock)
+    -   Adds item to cart or updates quantity if already present
+    -   Returns success message or validation error
+
+2.  **`remove_from_cart(product_id)`**
+    -   Removes an item from the cart
+    -   Returns confirmation message or error if item not found
+
+3.  **`view_cart()`**
+    -   Displays current cart contents
+    -   Shows items, quantities, prices, and total
+    -   Returns formatted cart summary
+
+4.  **`create_order(customer_name, email, shipping_address)`**
+    -   Reads items directly from cart (no items parameter needed)
+    -   Validates all items are still available
+    -   Creates order in database
+    -   Clears cart after successful creation
+
+### Architecture Tradeoffs: In-Memory Cart vs. History-Based
+
+The in-memory cart approach was chosen over relying on LLM conversation history for these reasons:
+
+**Key Benefits:**
+-   **Reliability:** Prevents LLM from forgetting items or getting quantities wrong when handling multiple products
+-   **Simpler order creation:** Direct read from cart instead of reconstructing items from conversation history
+-   **Better UX:** Users can explicitly view their cart (`view_cart`) and remove items (`remove_from_cart`)
+-   **Easier debugging:** Cart state is inspectable, making issues easier to diagnose
+
+**Tradeoffs:**
+-   **Session-only:** Cart is lost when conversation ends (acceptable for single-session purchases)
+-   **Slightly more code:** Requires cart management tools, but adds minimal complexity
+
+The history-based approach was not chosen because LLM memory is unreliable for tracking multiple cart items, and reconstructing the cart from conversation history for `create_order` is error-prone.

@@ -181,10 +181,6 @@ class RAGAgent:
                     run_limit=5,
                     exit_behavior="end",
                 ),
-                ToolCallLimitMiddleware(
-                    tool_name="retrieve_products",
-                    run_limit=3,
-                ),
             ],
         )
 

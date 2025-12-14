@@ -37,6 +37,7 @@ class OrderAgent:
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
         timeout: int = 30,
+        cart: Optional[List[Dict]] = None,
     ):
         """
         Initialize the Order Agent.
@@ -45,12 +46,14 @@ class OrderAgent:
             model_name: OpenAI model to use (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
             timeout: Request timeout in seconds (default: 30)
+            cart: Reference to orchestrator's cart list for storing items
         """
         self.model_name = model_name
         self.temperature = temperature
         self.timeout = timeout
         self.catalog = ProductCatalog()
         self.order_db = OrderDatabase()
+        self.cart = cart if cart is not None else []
 
         @tool
         def transfer_to_rag_agent(reason: str) -> str:
@@ -74,22 +77,25 @@ class OrderAgent:
             return f"TRANSFER_TO_RAG: {reason}"
 
         @tool
-        def validate_product(product_id: str, quantity: int = 1) -> str:
+        def add_to_cart(product_id: str, quantity: int = 1) -> str:
             """
-            Validate product availability and get pricing information.
+            Validate product and add it to the shopping cart.
+
+            This tool validates the product (checks existence, availability, stock)
+            and adds it to the cart. If the product is already in the cart, it updates
+            the quantity.
 
             Use this when customer mentions a product they want to order.
-            Check if product exists, is available, and get current price.
 
             Args:
-                product_id: The product ID to validate
-                quantity: Quantity customer wants (default: 1)
+                product_id: The product ID to add to cart
+                quantity: Quantity to add (default: 1)
 
             Returns:
-                Validation result with product details and availability
+                Success message with product details, or error message if validation fails
             """
             logger.debug(
-                f"Tool called: validate_product(product_id='{product_id}', quantity={quantity})"
+                f"Tool called: add_to_cart(product_id='{product_id}', quantity={quantity})"
             )
 
             product = self.catalog.get_product(product_id)
@@ -106,17 +112,39 @@ class OrderAgent:
                     f"Would you like me to suggest similar products?"
                 )
 
-            total = product["price"] * quantity
+            existing_item = None
+            for item in self.cart:
+                if item["product_id"] == product_id:
+                    existing_item = item
+                    break
 
-            result = (
-                f"✓ Product validated:\n"
-                f"- Name: {product['name']}\n"
-                f"- Product ID: {product_id}\n"
-                f"- Price: ${product['price']:.2f} each\n"
-                f"- Quantity: {quantity}\n"
-                f"- Subtotal: ${total:.2f}\n"
-                f"- Stock: {stock_status.replace('_', ' ').title()}\n"
-            )
+            if existing_item:
+                existing_item["quantity"] = quantity
+                subtotal = product["price"] * quantity
+                result = (
+                    f"✓ Updated cart:\n"
+                    f"- {product['name']} (ID: {product_id})\n"
+                    f"- Quantity: {quantity}\n"
+                    f"- Subtotal: ${subtotal:.2f}\n"
+                )
+            else:
+                self.cart.append(
+                    {
+                        "product_id": product_id,
+                        "product_name": product["name"],
+                        "quantity": quantity,
+                        "unit_price": product["price"],
+                    }
+                )
+                subtotal = product["price"] * quantity
+                result = (
+                    f"✓ Added to cart:\n"
+                    f"- {product['name']} (ID: {product_id})\n"
+                    f"- Quantity: {quantity}\n"
+                    f"- Price: ${product['price']:.2f} each\n"
+                    f"- Subtotal: ${subtotal:.2f}\n"
+                    f"- Stock: {stock_status.replace('_', ' ').title()}\n"
+                )
 
             if stock_status == "low_stock":
                 result += "\nNote: This item has limited stock available."
@@ -124,23 +152,83 @@ class OrderAgent:
             return result
 
         @tool
+        def remove_from_cart(product_id: str) -> str:
+            """
+            Remove an item from the shopping cart.
+
+            Use this when the customer wants to remove a product from their cart.
+
+            Args:
+                product_id: The product ID to remove from cart
+
+            Returns:
+                Confirmation message if removed, or error if not found in cart
+            """
+            logger.debug(f"Tool called: remove_from_cart(product_id='{product_id}')")
+
+            removed = False
+            product_name = None
+            for i, item in enumerate(self.cart):
+                if item["product_id"] == product_id:
+                    product_name = item["product_name"]
+                    self.cart.pop(i)
+                    removed = True
+                    break
+
+            if removed:
+                return f"✓ Removed {product_name} (ID: {product_id}) from your cart."
+            else:
+                return f"Product {product_id} is not in your cart."
+
+        @tool
+        def view_cart() -> str:
+            """
+            View the current contents of the shopping cart.
+
+            Use this when customer asks about their cart, wants to see what's in it,
+            or wants to review items before checkout.
+
+            Returns:
+                Formatted cart contents with items, quantities, prices, and total
+            """
+            logger.debug("Tool called: view_cart()")
+
+            if not self.cart:
+                return "Your cart is empty. Add some products to get started!"
+
+            lines = []
+            total = 0
+
+            for item in self.cart:
+                subtotal = item["quantity"] * item["unit_price"]
+                total += subtotal
+                lines.append(
+                    f"- {item['quantity']}x {item['product_name']} (ID: {item['product_id']}) "
+                    f"@ ${item['unit_price']:.2f} each = ${subtotal:.2f}"
+                )
+
+            result = "🛒 Your Cart:\n\n" + "\n".join(lines) + f"\n\nTotal: ${total:.2f}"
+
+            return result
+
+        @tool
         def create_order(
-            items: str,
             customer_name: str,
             email: str,
             shipping_address: str,
         ) -> str:
             """
-            Create a new order in the system.
+            Create a new order from the shopping cart.
 
             Use this ONLY after you have:
-            1. Validated ALL products
+            1. Added all desired products to cart using add_to_cart
             2. Collected ALL customer information (name, email, address)
             3. Confirmed the order with the customer
 
+            The order will be created from the current cart contents. The cart will be
+            cleared after successful order creation.
+
             Args:
-                items: JSON string of items list. Each item must have: product_id, quantity
-                       Example: '[{"product_id": "TECH-007", "quantity": 2}, {"product_id": "HOME-004", "quantity": 1}]'
                 customer_name: Customer's full name
                 email: Customer's email address
                 shipping_address: Complete shipping address
@@ -149,30 +237,25 @@ class OrderAgent:
                 Order confirmation with order ID and details
             """
 
-            logger.debug(f"Tool called: create_order with items: {items}")
+            logger.debug(f"Tool called: create_order")
 
-            try:
-                items_list = json.loads(items)
-            except json.JSONDecodeError:
-                return f"Error: Invalid items format. Must be a JSON array."
-
-            if not items_list or not isinstance(items_list, list):
-                return f"Error: Items must be a non-empty list."
+            if not self.cart:
+                return "Error: Your cart is empty. Please add items to your cart before placing an order."
 
             order_items = []
             total = 0
             items_summary = []
 
-            for item in items_list:
-                product_id = item.get("product_id")
-                quantity = item.get("quantity", 1)
+            for cart_item in self.cart:
+                product_id = cart_item["product_id"]
+                quantity = cart_item["quantity"]
 
                 product = self.catalog.get_product(product_id)
                 if not product:
-                    return f"Error: Product {product_id} not found."
+                    return f"Error: Product {product_id} not found. It may have been removed from the catalog."
 
                 if not self.catalog.is_available(product_id):
-                    return f"Error: {product['name']} is out of stock."
+                    return f"Error: {product['name']} is now out of stock. Please remove it from your cart or choose an alternative."
 
                 subtotal = product["price"] * quantity
                 total += subtotal
@@ -199,6 +282,8 @@ class OrderAgent:
             logger.info(
                 f"Order created: {order.order_id} with {len(order_items)} items"
             )
+
+            self.cart.clear()
 
             items_text = "\n".join(items_summary)
 
@@ -230,9 +315,11 @@ class OrderAgent:
             "- If product_id cannot be found in chat history, ask customer to search for the product first\n"
             "\n"
             "TOOLS AVAILABLE:\n"
-            "1. validate_product - Check product availability and pricing\n"
-            "2. create_order - Create the final order\n"
-            "3. transfer_to_rag_agent - Transfer customer back to product search\n"
+            "1. add_to_cart - Validate product and add/update it in the shopping cart\n"
+            "2. remove_from_cart - Remove an item from the shopping cart\n"
+            "3. view_cart - Show current cart contents with items, quantities, and total\n"
+            "4. create_order - Create order from cart (requires customer info: name, email, address)\n"
+            "5. transfer_to_rag_agent - Transfer customer back to product search\n"
             "\n"
             "WHEN TO TRANSFER:\n"
             "- Customer wants to search for products\n"
@@ -241,7 +328,7 @@ class OrderAgent:
             "When transferring: Use transfer_to_rag_agent tool, set 'transfer_to_agent' field to 'rag', and include a friendly message.\n"
             "\n"
             "ORDER PROCESS:\n"
-            "1. VALIDATE PRODUCTS: Use validate_product tool for EACH product_id and quantity\n"
+            "1. ADD TO CART: Use add_to_cart tool for EACH product_id and quantity\n"
             "   - Look in chat history to find product_id when customer mentions product by name\n"
             "   - If product_id cannot be found in chat history, ask customer to search for the product first or provide the Product ID\n"
             "   - Extract quantity from customer's message:\n"
@@ -249,24 +336,29 @@ class OrderAgent:
             "     * Number words: 'I want three laptops' → quantity = 3\n"
             "     * Articles: 'I want to buy a macbook' → quantity = 1\n"
             "     * No quantity mentioned: 'I want macbook' → quantity = 1 (infer from context)\n"
-            "   - If quantity is clear (explicit number or article), validate immediately\n"
+            "   - If quantity is clear (explicit number or article), add to cart immediately\n"
             "   - If quantity is truly ambiguous, ask 'How many would you like to order?'\n"
-            "2. ASK TO ADD MORE: After each validation, ask 'Would you like to add anything else to your order?'\n"
-            "3. COLLECT INFO: Once done shopping, collect - Name, Email, Full shipping address\n"
-            "4. CONFIRM: Show summary with ALL items (with quantities) and total, ask for final confirmation\n"
-            "5. CREATE: Use create_order with ALL items as JSON array\n"
+            "   - add_to_cart validates AND stores - no separate validation step needed\n"
+            "2. ASK TO ADD MORE: After each add_to_cart, ask 'Would you like to add anything else to your cart?'\n"
+            "3. VIEW CART: Use view_cart tool when customer asks about their cart or before checkout\n"
+            "4. COLLECT INFO: Once done shopping, collect - Name, Email, Full shipping address\n"
+            "5. CONFIRM: Use view_cart to show summary, then ask for final confirmation\n"
+            "6. CREATE: Use create_order with customer info (cart is used automatically)\n"
             "\n"
             "IMPORTANT RULES:\n"
             "- Extract quantity from customer's message FIRST before asking questions\n"
-            "- Validate ALL products using validate_product tool before collecting customer info\n"
-            "- Use ONLY product information from validate_product tool results - never invent prices, names, or details\n"
-            "- If validate_product returns an error (product not found, out of stock), use that exact information\n"
-            "- After each validation, ask about adding more items\n"
+            "- Use add_to_cart to add/update items - it validates AND stores in one step\n"
+            "- Use remove_from_cart when customer wants to remove an item from cart\n"
+            "- Use view_cart whenever customer asks 'what's in my cart?' or 'show my cart'\n"
+            "- To update quantity, use add_to_cart again with new quantity (replaces old quantity)\n"
+            "- Use ONLY product information from add_to_cart tool results - never invent prices, names, or details\n"
+            "- If add_to_cart returns an error (product not found, out of stock), use that exact information\n"
+            "- After each add_to_cart, ask about adding more items\n"
             "- Support multiple items in a single order\n"
-            '- Items format: \'[{"product_id": "TECH-007", "quantity": 2}]\'\n'
             "- Never create order without confirmation\n"
             "- Handle out-of-stock by offering alternatives or transferring to search\n"
             "- Ask for one detail at a time if not all provided\n"
+            "- create_order automatically uses cart contents - no need to pass items\n"
             "\n"
             "RESPONSE FORMAT:\n"
             "- 'status': MUST be one of: 'collecting_info', 'confirming', 'completed', 'failed'\n"
@@ -281,17 +373,19 @@ class OrderAgent:
 
         self.agent = create_agent(
             model,
-            tools=[transfer_to_rag_agent, validate_product, create_order],
+            tools=[
+                transfer_to_rag_agent,
+                add_to_cart,
+                remove_from_cart,
+                view_cart,
+                create_order,
+            ],
             system_prompt=system_prompt,
             response_format=OrderResponse,
             middleware=[
                 ModelCallLimitMiddleware(
                     run_limit=10,
                     exit_behavior="end",
-                ),
-                ToolCallLimitMiddleware(
-                    tool_name="validate_product",
-                    run_limit=5,
                 ),
                 ToolCallLimitMiddleware(
                     tool_name="create_order",

@@ -83,12 +83,16 @@ class Orchestrator:
         self.timeout = timeout
         self._chat_history = []
         self._state = OrchestratorState.SEARCH
+        self._cart = []
 
         self.rag_agent = RAGAgent(
             model_name=model_name, temperature=temperature, timeout=timeout
         )
         self.order_agent = OrderAgent(
-            model_name=model_name, temperature=temperature, timeout=timeout
+            model_name=model_name,
+            temperature=temperature,
+            timeout=timeout,
+            cart=self._cart,
         )
 
         @tool
