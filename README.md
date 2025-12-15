@@ -158,13 +158,22 @@ uv run src/main.py --ui --verbose     # Web UI with verbose logging
 
 ### Developer Console
 
+<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/4394f441-7b44-4cfe-b352-bb39b4dc6f8d" />
+
 To access the interactive developer console for debugging and testing:
 
 ```bash
 uv run src/console.py
 ```
 
-This opens a Python shell with pre-initialized `db` (database connection) and `products` variables, plus helpful functions like `find_product()` and `create_test_order()`. Use this for data inspection, manual testing, and debugging.
+This opens an interactive Python shell with pre-initialized objects:
+
+- **`products`**: Instance of `ProductCatalog` for managing product data.
+  - Usage: `products.get_product("TECH-001")`, `products.get_all_products()`
+- **`orders`**: Instance of `OrderDatabase` for managing order records.
+  - Usage: `orders.get_last_order()`, `orders.get_order_count()`
+
+Use this console for deep inspection of the database, manual testing of data retrieval, and debugging order states.
 
 ## Limitations
 
