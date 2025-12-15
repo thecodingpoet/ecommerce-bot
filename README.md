@@ -175,6 +175,16 @@ This opens an interactive Python shell with pre-initialized objects:
 
 Use this console for deep inspection of the database, manual testing of data retrieval, and debugging order states.
 
+## Testing
+
+For manual testing scenarios and expected conversation flows, see the [Conversation Test Guide](examples/test_conversations.md).
+This guide covers:
+- Product price queries
+- Multi-turn discussions
+- Order confirmation flows
+- Ambiguous query handling
+- Edge cases and error handling
+
 ## Limitations
 
 - **Single User Web UI**: The current Web UI implementation shares state (conversation history and shopping cart) across all connected users. It is designed for local, single-user testing only. For multi-user deployments, session management logic would need to be added.
