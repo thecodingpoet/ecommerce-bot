@@ -68,7 +68,7 @@ class Orchestrator:
         self,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
-        timeout: int = 30,
+        timeout: int = 15,
     ):
         """
         Initialize the Orchestrator.
@@ -76,7 +76,7 @@ class Orchestrator:
         Args:
             model_name: OpenAI model to use
             temperature: Sampling temperature
-            timeout: Request timeout in seconds (default: 30)
+            timeout: Request timeout in seconds (default: 15)
         """
         self.model_name = model_name
         self.temperature = temperature
@@ -123,13 +123,14 @@ class Orchestrator:
             return response
 
         @tool
-        def place_order(request: str) -> str:
+        def manage_order(request: str) -> str:
             """
             Handle order placement and shopping cart management.
 
             Use this when the user wants to:
             - Place an order or buy a product
             - Add items to cart
+            - View or check shopping cart
             - Checkout
             - Provide shipping/billing information
             - Confirm a purchase
@@ -141,7 +142,7 @@ class Orchestrator:
             - Order creation
 
             Input: Natural language order request
-            (e.g., 'I want to buy TECH-007', 'order 2 laptops')
+            (e.g., 'I want to buy TECH-007', 'order 2 laptops', 'show my cart')
             """
             logger.info(f"Routing to Order Agent: {request}")
 
@@ -168,12 +169,13 @@ class Orchestrator:
             "You are a helpful e-commerce assistant that helps customers find and purchase products. "
             "You have two specialized capabilities: "
             "1. search_products - for finding and learning about products in the catalog "
-            "2. place_order - for purchasing products and managing orders "
+            "2. manage_order - for purchasing products and managing orders "
             "\n\n"
             "ROUTING RULES: "
             "- Use search_products when users ask about products, features, pricing, availability, or want to browse "
-            "- Use place_order ONLY ONCE when users first express intent to buy/purchase/order "
-            "- After calling place_order, DO NOT call it again - the order agent will handle the conversation "
+            "- Use manage_order ONLY ONCE when users first express intent to buy/purchase/order "
+            "- Use manage_order when users ask to 'view cart', 'check cart', 'see my items', or 'checkout' "
+            "- After calling manage_order, DO NOT call it again - the order agent will handle the conversation "
             "- For greetings (hi, hello, hey), respond warmly and ask how you can help with products or orders "
             "\n\n"
             "HANDLING AMBIGUOUS OR UNCLEAR QUERIES: "
@@ -198,7 +200,7 @@ class Orchestrator:
 
         self.agent = create_agent(
             model,
-            tools=[search_products, place_order],
+            tools=[search_products, manage_order],
             system_prompt=system_prompt,
             response_format=OrchestratorResponse,
             middleware=[
@@ -249,6 +251,20 @@ class Orchestrator:
                     rag_result = self.rag_agent.invoke(
                         user_query, chat_history=self._chat_history
                     )
+
+                    # Check if RAG agent bounced it back to order
+                    # This happens if the user query was "add more items" (triggering transfer to RAG)
+                    # but RAG sees it as an order intent and wants to transfer back.
+                    # In this case, we should just show the Order agent's transition message
+                    # and let the user enter their actual search query next.
+                    if rag_result.transfer_to_agent == "order":
+                        logger.info(
+                            "RAG agent bounced back (not a search query). Returning order agent transition message."
+                        )
+                        return OrchestratorResponse(
+                            message=result.message, agent_used="order"
+                        )
+
                     return OrchestratorResponse(
                         message=rag_result.message, agent_used="rag"
                     )

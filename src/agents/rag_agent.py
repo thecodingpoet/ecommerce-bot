@@ -37,7 +37,7 @@ class RAGAgent:
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
         k: int = 5,
-        timeout: int = 30,
+        timeout: int = 15,
     ):
         """
         Initialize the RAG Agent.
@@ -46,7 +46,7 @@ class RAGAgent:
             model_name: OpenAI model to use for generation (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
             k: Number of products to retrieve from vector store
-            timeout: Request timeout in seconds (default: 30)
+            timeout: Request timeout in seconds (default: 15)
         """
         self.model_name = model_name
         self.temperature = temperature

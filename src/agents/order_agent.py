@@ -36,7 +36,7 @@ class OrderAgent:
         self,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
-        timeout: int = 30,
+        timeout: int = 15,
         cart: Optional[List[Dict]] = None,
     ):
         """
@@ -45,7 +45,7 @@ class OrderAgent:
         Args:
             model_name: OpenAI model to use (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
-            timeout: Request timeout in seconds (default: 30)
+            timeout: Request timeout in seconds (default: 15)
             cart: Reference to orchestrator's cart list for storing items
         """
         self.model_name = model_name
@@ -342,8 +342,9 @@ class OrderAgent:
             "2. ASK TO ADD MORE: After each add_to_cart, ask 'Would you like to add anything else to your cart?'\n"
             "3. VIEW CART: Use view_cart tool when customer asks about their cart or before checkout\n"
             "4. COLLECT INFO: Once done shopping, collect - Name, Email, Full shipping address\n"
-            "5. CONFIRM: Use view_cart to show summary, then ask for final confirmation\n"
-            "6. CREATE: Use create_order with customer info (cart is used automatically)\n"
+            "5. FINAL CONFIRMATION: Use view_cart to show summary, then EXPLICITLY ask: 'Are you ready to place your order?'\n"
+            "6. CHECKOUT: ONLY when user says 'yes' or 'place order' to the final confirmation, use create_order\n"
+            "   - DO NOT call create_order just because you have the address. You MUST get a final 'yes'.\n"
             "\n"
             "IMPORTANT RULES:\n"
             "- Extract quantity from customer's message FIRST before asking questions\n"
@@ -355,7 +356,8 @@ class OrderAgent:
             "- If add_to_cart returns an error (product not found, out of stock), use that exact information\n"
             "- After each add_to_cart, ask about adding more items\n"
             "- Support multiple items in a single order\n"
-            "- Never create order without confirmation\n"
+            "- Never create order without FINAL confirmation ('Are you ready to place your order?')\n"
+            "- Sending the address is NOT a confirmation to place the order immediately. You must still ask 'Are you ready?'\n"
             "- Handle out-of-stock by offering alternatives or transferring to search\n"
             "- Ask for one detail at a time if not all provided\n"
             "- create_order automatically uses cart contents - no need to pass items\n"
