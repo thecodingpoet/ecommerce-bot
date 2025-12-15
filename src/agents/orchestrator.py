@@ -21,30 +21,30 @@ class OrchestratorState(str, Enum):
     """
     Orchestrator conversation states.
 
-    - SEARCH: Default state, routes queries to appropriate agent
-    - ORDER_LOCKED: Locked to Order Agent during active order process
+    - INTENT: Default state, routes queries to appropriate agent
+    - CHECKOUT: Locked to Order Agent during active order process
     """
 
-    SEARCH = "search"
-    ORDER_LOCKED = "order_locked"
+    INTENT = "intent"
+    CHECKOUT = "checkout"
 
-    def is_order_mode(self) -> bool:
-        """Check if currently in order mode."""
-        return self == OrchestratorState.ORDER_LOCKED
+    def is_checkout_mode(self) -> bool:
+        """Check if currently in checkout mode."""
+        return self == OrchestratorState.CHECKOUT
 
     @classmethod
-    def should_exit_order_mode(
+    def should_exit_checkout_mode(
         cls, order_status: str, transfer_to_agent: Optional[str]
     ) -> bool:
         """
-        Determine if we should exit ORDER_LOCKED state based on order agent response.
+        Determine if we should exit CHECKOUT state based on order agent response.
 
         Args:
             order_status: OrderAgent status ("collecting_info", "confirming", "completed", "failed")
             transfer_to_agent: Transfer request from agent ("rag", "order", or None)
 
         Returns:
-            True if should exit order mode (transition to SEARCH)
+            True if should exit checkout mode (transition to INTENT)
         """
         if order_status in ("completed", "failed"):
             return True
@@ -82,7 +82,7 @@ class Orchestrator:
         self.temperature = temperature
         self.timeout = timeout
         self._chat_history = []
-        self._state = OrchestratorState.SEARCH
+        self._state = OrchestratorState.INTENT
         self._cart = []
 
         self.rag_agent = RAGAgent(
@@ -112,7 +112,7 @@ class Orchestrator:
             """
             logger.info(f"Routing to RAG Agent: {request}")
 
-            self._state = OrchestratorState.SEARCH
+            self._state = OrchestratorState.INTENT
 
             result = self.rag_agent.invoke(request, chat_history=self._chat_history)
 
@@ -146,14 +146,14 @@ class Orchestrator:
             """
             logger.info(f"Routing to Order Agent: {request}")
 
-            self._state = OrchestratorState.ORDER_LOCKED
+            self._state = OrchestratorState.CHECKOUT
 
             result = self.order_agent.invoke(request, chat_history=self._chat_history)
 
-            if OrchestratorState.should_exit_order_mode(
+            if OrchestratorState.should_exit_checkout_mode(
                 result.status, result.transfer_to_agent
             ):
-                self._state = OrchestratorState.SEARCH
+                self._state = OrchestratorState.INTENT
                 logger.info(f"Order {result.status}, exiting order mode")
 
                 if result.transfer_to_agent == "rag":
@@ -234,16 +234,16 @@ class Orchestrator:
 
         self._chat_history = chat_history.copy() if chat_history else []
 
-        if self._state.is_order_mode():
+        if self._state.is_checkout_mode():
             logger.info("In order mode, routing directly to order agent")
             result = self.order_agent.invoke(
                 user_query, chat_history=self._chat_history
             )
 
-            if OrchestratorState.should_exit_order_mode(
+            if OrchestratorState.should_exit_checkout_mode(
                 result.status, result.transfer_to_agent
             ):
-                self._state = OrchestratorState.SEARCH
+                self._state = OrchestratorState.INTENT
                 logger.info(f"Order {result.status}, exiting order mode")
 
                 if result.transfer_to_agent == "rag":

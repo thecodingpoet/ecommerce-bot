@@ -45,9 +45,9 @@ flowchart TD
 The central brain of the system. It acts as a router, directing user intents to specialized agents.
 -   **Routing Logic:** Uses an LLM classifier to determine if a query is about "product search" or "placing an order".
 -   **State Management:** Uses an enum-based state machine (`OrchestratorState`) to manage conversation flow:
-    -   `SEARCH`: Default state, routes queries to appropriate agent based on intent classification
-    -   `ORDER_LOCKED`: Locks the conversation to the Order Agent during an active transaction, preventing context switching until the order is complete or explicitly transferred
-    -   State transitions are handled via `should_exit_order_mode()` which evaluates OrderAgent responses to determine when to return to `SEARCH` state
+    -   `INTENT`: Default state, routes queries to appropriate agent based on intent classification
+    -   `CHECKOUT`: Locks the conversation to the Order Agent during an active transaction, preventing context switching until the order is complete or explicitly transferred
+    -   State transitions are handled via `should_exit_checkout_mode()` which evaluates OrderAgent responses to determine when to return to `INTENT` state
 -   **Cart Management:** Maintains an in-memory shopping cart (`self._cart`) as a list of cart items. The cart persists during the conversation session and is cleared after successful order creation. Cart items contain: `product_id`, `product_name`, `quantity`, `unit_price`.
 
 ### B. Specialized Agents
@@ -96,10 +96,10 @@ This design prevents timeout issues during agent handovers while ensuring each a
 1.  **User Input** enters via `main.py` (CLI or Web UI).
 2.  **main.py** passes input directly to `Orchestrator`.
 3.  **Orchestrator** evaluates current state:
-    -   **If state is `ORDER_LOCKED`**: Routes directly to **Order Agent** (bypasses intent classification).
-    -   **If state is `SEARCH`**: Uses LLM classifier to determine intent:
+    -   **If state is `CHECKOUT`**: Routes directly to **Order Agent** (bypasses intent classification).
+    -   **If state is `INTENT`**: Uses LLM classifier to determine intent:
         -   *Product Intent* -> **RAG Agent** -> Hybrid Search (exact match first, then semantic) -> Response.
-        -   *Purchase Intent* -> **Order Agent** -> Sets state to `ORDER_LOCKED` -> Cart operations -> Response.
+        -   *Purchase Intent* -> **Order Agent** -> Sets state to `CHECKOUT` -> Cart operations -> Response.
 4.  **Order Agent** processes purchase requests:
     -   Uses `add_to_cart` to validate and store items in Orchestrator's cart
     -   Uses `view_cart` to show cart contents when requested
@@ -107,10 +107,10 @@ This design prevents timeout issues during agent handovers while ensuring each a
     -   Uses `create_order` which reads from cart and clears it after success
 5.  **Agents** return structured responses with status information.
 6.  **Orchestrator** processes responses and updates state:
-    -   Evaluates `OrderAgent` status via `should_exit_order_mode()`:
-        -   Order completed/failed → Transition to `SEARCH` (cart cleared on success)
-        -   Transfer request to RAG → Transition to `SEARCH` (cart preserved)
-        -   Otherwise → Remain in `ORDER_LOCKED`
+    -   Evaluates `OrderAgent` status via `should_exit_checkout_mode()`:
+        -   Order completed/failed → Transition to `INTENT` (cart cleared on success)
+        -   Transfer request to RAG → Transition to `INTENT` (cart preserved)
+        -   Otherwise → Remain in `CHECKOUT`
 7.  **Orchestrator** formats and returns final response to user.
 
 ## 5. State Management Details
@@ -119,24 +119,24 @@ The orchestrator uses a simple enum-based state machine for conversation flow co
 
 ```python
 class OrchestratorState(str, Enum):
-    SEARCH = "search"           # Default: routes based on intent
-    ORDER_LOCKED = "order_locked"  # Locked: direct to Order Agent
+    INTENT = "intent"           # Default: routes based on intent
+    CHECKOUT = "checkout"  # Locked: direct to Order Agent
 ```
 
 **State Transition Diagram:**
 
 ```mermaid
 flowchart TD
-    SEARCH[SEARCH<br/>Intent-based routing] -->|Purchase Intent| ORDER[ORDER_LOCKED<br/>Direct to Order Agent]
-    ORDER -->|Order completed<br/>Order failed<br/>Transfer requested| SEARCH
+    INTENT[INTENT<br/>Intent-based routing] -->|Purchase Intent| CHECKOUT[CHECKOUT<br/>Direct to Order Agent]
+    CHECKOUT -->|Order completed<br/>Order failed<br/>Transfer requested| INTENT
     
-    style SEARCH fill:#4A90E2,stroke:#2E5C8A,stroke-width:2px,color:#fff
-    style ORDER fill:#E24A90,stroke:#8A2E5C,stroke-width:2px,color:#fff
+    style INTENT fill:#4A90E2,stroke:#2E5C8A,stroke-width:2px,color:#fff
+    style CHECKOUT fill:#E24A90,stroke:#8A2E5C,stroke-width:2px,color:#fff
 ```
 
 **State Transitions:**
--   `SEARCH` → `ORDER_LOCKED`: When user expresses purchase intent
--   `ORDER_LOCKED` → `SEARCH`: When order completes, fails, or user requests transfer to search
+-   `INTENT` → `CHECKOUT`: When user expresses purchase intent
+-   `CHECKOUT` → `INTENT`: When order completes, fails, or user requests transfer to search
 
 **Benefits:**
 -   Type-safe state management (enum prevents invalid states)
