@@ -68,7 +68,7 @@ class Orchestrator:
         self,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
-        timeout: int = 15,
+        timeout: int = 60,
     ):
         """
         Initialize the Orchestrator.
@@ -248,15 +248,10 @@ class Orchestrator:
 
                 if result.transfer_to_agent == "rag":
                     logger.info("Order agent requested transfer to RAG, routing query")
-                    rag_result = self.rag_agent.invoke(
-                        user_query, chat_history=self._chat_history
-                    )
+                    # Don't pass full chat history on handover - RAG only needs the search query.
+                    rag_result = self.rag_agent.invoke(user_query, chat_history=[])
 
-                    # Check if RAG agent bounced it back to order
-                    # This happens if the user query was "add more items" (triggering transfer to RAG)
-                    # but RAG sees it as an order intent and wants to transfer back.
-                    # In this case, we should just show the Order agent's transition message
-                    # and let the user enter their actual search query next.
+                    # If RAG bounces back, return order transition message and await new query.
                     if rag_result.transfer_to_agent == "order":
                         logger.info(
                             "RAG agent bounced back (not a search query). Returning order agent transition message."

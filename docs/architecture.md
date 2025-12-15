@@ -66,6 +66,21 @@ The central brain of the system. It acts as a router, directing user intents to 
     -   **Cart Management:** Uses an in-memory cart (stored in Orchestrator) to track items before checkout.
     -   **Protocol:** Uses structured outputs (`OrderResponse`) to communicate status (`collecting_info`, `confirming`, `completed`) back to the orchestrator.
 
+### Chat History Strategy
+
+The agents have different requirements for conversation history, which affects how the Orchestrator passes context during agent handovers:
+
+| Agent | Needs History? | Reason |
+|-------|----------------|--------|
+| **RAG Agent** | ❌ No | Stateless product search. Each query is independent—the agent only needs the current search query to find products. |
+| **Order Agent** | ✅ Yes | Stateful multi-turn conversation. Requires history to: (1) find product IDs from previous listings, (2) collect customer info across turns, (3) understand follow-up responses like "yes", "2", or addresses. |
+
+**Implementation:**
+-   When routing to **Order Agent**: Full `chat_history` is passed to maintain conversational context.
+-   When transferring from Order → **RAG Agent**: Empty `chat_history=[]` is passed to avoid LLM timeouts caused by processing large contexts with verbose product listings. The RAG agent only needs the search query.
+
+This design prevents timeout issues during agent handovers while ensuring each agent has the context it needs.
+
 ### C. Data Layer
 1.  **Product Catalog (`src/database/products.py`)**
     -   **Source:** `data/products.json`.

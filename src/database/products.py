@@ -157,6 +157,7 @@ class ProductVectorStore:
                 "price": product["price"],
                 "category": product["category"],
                 "stock_status": product["stock_status"],
+                "description": product["description"],
             }
 
             doc = Document(

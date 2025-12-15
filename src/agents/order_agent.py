@@ -36,7 +36,7 @@ class OrderAgent:
         self,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
-        timeout: int = 15,
+        timeout: int = 60,
         cart: Optional[List[Dict]] = None,
     ):
         """
