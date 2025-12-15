@@ -165,3 +165,9 @@ uv run src/console.py
 ```
 
 This opens a Python shell with pre-initialized `db` (database connection) and `products` variables, plus helpful functions like `find_product()` and `create_test_order()`. Use this for data inspection, manual testing, and debugging.
+
+## Limitations
+
+- **Single User Web UI**: The current Web UI implementation shares state (conversation history and shopping cart) across all connected users. It is designed for local, single-user testing only. For multi-user deployments, session management logic would need to be added.
+- **In-Memory Shopping Cart**: Shopping cart data is stored in memory and will be lost if the application is restarted.
+- **No Payment Processing**: The application simulates the checkout process and does not integrate with real payment gateways or shipping providers.
