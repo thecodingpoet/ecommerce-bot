@@ -159,20 +159,27 @@ def run_web_ui(
                 logger.exception("Full traceback:")
             return f"❌ Error: {e}\nPlease try again."
 
-    chatbot = gr.Chatbot(
-        height=700,
-        min_height=500,
-        max_height=1000,
-        show_label=False,
-    )
-
     with gr.Blocks() as demo:
+        chatbot = gr.Chatbot(
+            show_label=False,
+            autoscroll=True,
+        )
+
         gr.ChatInterface(
             fn=chat_fn,
-            title="🛍️ Shopping Assistant",
-            description="I can help you search products, get product details, and place orders. Just ask!",
+            title="🛍️ Your AI Shopping Assistant",
+            description=(
+                "Welcome! I’m here to help you shop:\n\n"
+                "• 🔎 Find products you’re looking for\n"
+                "• ℹ️ See details like pricing and availability\n"
+                "• 🛒 Order items right here in the chat"
+            ),
             chatbot=chatbot,
-            autoscroll=True,
+            textbox=gr.Textbox(
+                placeholder="What are you shopping for today?",
+                container=False,
+                scale=7,
+            ),
         )
 
     print(f"\n🚀 Starting web UI on http://{server_name}:{server_port}")
@@ -182,12 +189,7 @@ def run_web_ui(
         server_port=server_port,
         server_name=server_name,
         inbrowser=True,
-        theme=gr.themes.Citrus(),
-        css="""
-            footer {
-                display: none !important;
-            }
-        """,
+        theme=gr.themes.Default(),
     )
 
 

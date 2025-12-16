@@ -116,11 +116,7 @@ class Orchestrator:
 
             result = self.rag_agent.invoke(request, chat_history=self._chat_history)
 
-            response = result.message
-            if result.products:
-                response += f"\n\n[Retrieved {len(result.products)} products]"
-
-            return response
+            return self._append_product_details(result.message, result.products)
 
         @tool
         def manage_order(request: str) -> str:
@@ -171,31 +167,52 @@ class Orchestrator:
             "1. search_products - for finding and learning about products in the catalog "
             "2. manage_order - for purchasing products and managing orders "
             "\n\n"
-            "ROUTING RULES: "
-            "- Use search_products when users ask about products, features, pricing, availability, or want to browse "
-            "- Use manage_order ONLY ONCE when users first express intent to buy/purchase/order "
-            "- Use manage_order when users ask to 'view cart', 'check cart', 'see my items', or 'checkout' "
-            "- After calling manage_order, DO NOT call it again - the order agent will handle the conversation "
-            "- For greetings (hi, hello, hey), respond warmly and ask how you can help with products or orders "
+            "CRITICAL: ANTI-HALLUCINATION RULES\n"
+            "1. NEVER answer product questions without calling search_products first. This includes:\n"
+            "   - Product names, descriptions, specifications, or features\n"
+            "   - Prices or availability\n"
+            "   - Comparisons between products\n"
+            "   - Follow-up questions about previously mentioned products\n"
+            "2. The search_products tool is your SINGLE SOURCE OF TRUTH for product information.\n"
+            "3. Even if the user refers to a product mentioned earlier in the conversation, you MUST call search_products to verify current details.\n"
+            "4. NEVER invent product IDs, prices, specs, or other details from memory or chat history.\n"
+            "5. If you're about to provide product information without calling search_products, STOP. Call the tool instead.\n"
             "\n\n"
-            "HANDLING AMBIGUOUS OR UNCLEAR QUERIES: "
+            "ROUTING RULES:\n"
+            "- Use search_products for ANY product-related query including:\n"
+            "  - 'Tell me more about X' or 'more details on X'\n"
+            "  - 'How does X compare to Y?' or 'which is better?'\n"
+            "  - 'What's the price of X?'\n"
+            "  - Follow-up questions like 'what about the other one?'\n"
+            "- Use manage_order ONLY ONCE when users first express intent to buy/purchase/order\n"
+            "- Use manage_order when users ask to 'view cart', 'check cart', 'see my items', or 'checkout'\n"
+            "- After calling manage_order, DO NOT call it again - the order agent will handle the conversation\n"
+            "- For greetings (hi, hello, hey), respond warmly and ask how you can help with products or orders\n"
+            "\n\n"
+            "HANDLING AMBIGUOUS OR UNCLEAR QUERIES:\n"
             "- If the query is ambiguous, unclear, or you cannot determine which agent should handle it, "
-            "  DO NOT call any tool. Instead, respond directly with clarifying questions. "
+            "  DO NOT call any tool. Instead, respond directly with clarifying questions.\n"
             "- Examples of ambiguous queries: single numbers (e.g., '2'), vague terms, incomplete sentences, "
-            "  or queries that could refer to either product search or ordering "
+            "  or queries that could refer to either product search or ordering\n"
             "- Ask specific questions to understand the user's intent, such as: "
             "  'I'd like to help you, but could you clarify what you're looking for? Are you trying to: "
-            "  (1) search for products, or (2) place an order? If ordering, do you have a specific product ID?' "
+            "  (1) search for products, or (2) place an order? If ordering, do you have a specific product ID?'\n"
             "\n\n"
-            "OUT-OF-SCOPE QUERIES: "
+            "OUT-OF-SCOPE QUERIES:\n"
             "- For questions unrelated to products or orders (weather, news, general knowledge, etc.), "
             "  DO NOT call any tool. Politely decline directly: "
             "'I'm specialized in helping you find and purchase products. I can search our catalog or help you place an order. "
-            "For other questions, please contact our customer support team. What products can I help you with today?' "
+            "For other questions, please contact our customer support team. What products can I help you with today?'\n"
             "\n\n"
-            "GENERAL GUIDELINES: "
-            "- Always use tools for product/order requests - do not try to answer about products without using search_products "
-            "- Be friendly, concise, and helpful"
+            "GENERAL GUIDELINES:\n"
+            "- ALWAYS use search_products for any product information - answering from chat history alone is HALLUCINATION\n"
+            "- Be friendly, concise, and helpful\n"
+            "\n\n"
+            "RESPONSE FORMAT:\n"
+            "- You MUST return a valid JSON object matching the OrchestratorResponse schema.\n"
+            "- The JSON must have 'message' and 'agent_used' fields.\n"
+            "- DO NOT output any text, markdown, or explanations outside the JSON block.\n"
+            "- DO NOT include the ```json ... ``` markdown code fence, just the raw JSON object."
         )
 
         self.agent = create_agent(
@@ -214,6 +231,24 @@ class Orchestrator:
         logger.info(
             f"Orchestrator initialized with model={model_name}, temperature={temperature}, timeout={timeout}s"
         )
+
+    def _append_product_details(self, message: str, products: List) -> str:
+        """
+        Append structured product details to the message.
+
+        This ensures Product IDs are always present in the chat history for the Order Agent to use.
+        """
+        if not products:
+            return message
+
+        product_lines = []
+        for p in products:
+            product_lines.append(f"• {p.name} (ID: {p.product_id}) - ${p.price:.2f}")
+
+        if product_lines:
+            return message + "\n\nProducts Found:\n" + "\n".join(product_lines)
+
+        return message
 
     def invoke(
         self, user_query: str, chat_history: Optional[List[Dict]] = None
@@ -248,7 +283,7 @@ class Orchestrator:
 
                 if result.transfer_to_agent == "rag":
                     logger.info("Order agent requested transfer to RAG, routing query")
-                    # Don't pass full chat history on handover - RAG only needs the search query.
+                    # Explicitly don't pass history on handover - assume new search intent and avoid timeouts
                     rag_result = self.rag_agent.invoke(user_query, chat_history=[])
 
                     # If RAG bounces back, return order transition message and await new query.
@@ -260,8 +295,11 @@ class Orchestrator:
                             message=result.message, agent_used="order"
                         )
 
+                    # Append product details to message to preserve IDs in history
+                    final_message = self._append_product_details(rag_result.message, rag_result.products)
+
                     return OrchestratorResponse(
-                        message=rag_result.message, agent_used="rag"
+                        message=final_message, agent_used="rag"
                     )
 
             return OrchestratorResponse(message=result.message, agent_used="order")

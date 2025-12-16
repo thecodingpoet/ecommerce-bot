@@ -14,22 +14,6 @@ Available objects:
   orders     - OrderDatabase instance
   products   - ProductCatalog instance
 
-Order methods (use orders.):
-  create_order(name, email, items)
-  get_order_by_id(order_id)
-  get_all_orders()
-  get_orders_by_email(email)
-  get_last_order()
-  update_order_status(order_id, status)
-  delete_order(order_id)
-  get_order_count()
-
-Product methods (use products.):
-  get_product(product_id)
-  get_product_by_id_or_name(query)
-  get_all_products()
-  is_available(product_id)
-
 Examples:
   >>> products.get_product_by_id_or_name("TECH-001")
   >>> products.get_product("TECH-001")
