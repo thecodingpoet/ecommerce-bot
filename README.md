@@ -90,6 +90,8 @@ uv run src/initialize_vector_store.py
 The application supports both CLI and Web UI interfaces:
 
 #### Command-Line Interface (CLI)
+<img width="892" height="629" alt="Screenshot 2025-12-16 at 08 12 08" src="https://github.com/user-attachments/assets/a55c40e3-f498-44af-a3b6-86708052d170" />
+
 
 To start the CLI conversational assistant:
 
@@ -160,7 +162,8 @@ uv run src/main.py --ui --verbose     # Web UI with verbose logging
 
 ### Developer Console
 
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/4394f441-7b44-4cfe-b352-bb39b4dc6f8d" />
+<img width="947" height="829" alt="Screenshot 2025-12-16 at 08 16 46" src="https://github.com/user-attachments/assets/94289124-4a7c-4b49-873c-1908278d202e" />
+
 
 To access the interactive developer console for debugging and testing:
 
