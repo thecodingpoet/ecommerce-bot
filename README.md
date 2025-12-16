@@ -99,6 +99,8 @@ uv run src/main.py
 
 #### Web UI
 
+<img width="1642" height="870" alt="Screenshot 2025-12-16 at 08 05 49" src="https://github.com/user-attachments/assets/4a5ed3ce-3a12-4b4f-b219-2729d352722c" />
+
 To launch the web-based interface:
 
 ```bash
