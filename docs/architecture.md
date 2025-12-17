@@ -105,10 +105,29 @@ The agents have different requirements for conversation history, which affects h
 | **Order Agent** | ✅ Yes | Stateful multi-turn conversation. Requires history to: (1) find product IDs from previous listings, (2) collect customer info across turns, (3) understand follow-up responses like "yes", "2", or addresses. |
 
 **Implementation:**
--   When routing to **Order Agent**: Full `chat_history` is passed to maintain conversational context.
+-   When routing to **Order Agent**: Truncated `chat_history` is passed to maintain conversational context.
 -   When transferring from Order → **RAG Agent**: Empty `chat_history=[]` is passed to avoid LLM timeouts caused by processing large contexts with verbose product listings. The RAG agent only needs the search query.
 
 This design prevents timeout issues during agent handovers while ensuring each agent has the context it needs.
+
+### History Truncation
+
+To prevent LLM timeouts as conversations grow, the Orchestrator truncates chat history to the most recent N messages (default: 10) before passing it to agents.
+
+**Why Truncation Over Summarization?**
+
+| Aspect | Truncation (Used) | Summarization (Alternative) |
+|--------|-------------------|----------------------------|
+| **Latency** | ✅ Zero overhead | ❌ Extra LLM call per turn |
+| **Cost** | ✅ No additional tokens | ❌ Tokens spent on summarization |
+| **Accuracy** | ✅ No risk of losing details | ❌ LLM might drop product IDs |
+| **Complexity** | ✅ Simple implementation | ❌ Requires tuning, prompt engineering |
+
+**Why Truncation Works for E-commerce:**
+-   **Recent context matters most** — Users care about products they just viewed, not from 20 messages ago
+-   **Product IDs preserved** — The `_append_product_details()` method adds product IDs to each response, so recent messages contain the IDs needed for ordering
+-   **Low latency critical** — Shoppers expect fast responses; extra LLM calls for summarization add unacceptable delay
+-   **Summarization risk** — An LLM might drop a product ID during summarization, breaking the order flow
 
 ### C. Data Layer
 1.  **Product Catalog (`src/database/products.py`)**

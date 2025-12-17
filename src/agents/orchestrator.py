@@ -69,6 +69,7 @@ class Orchestrator:
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
         timeout: int = 60,
+        max_history_messages: int = 10,
     ):
         """
         Initialize the Orchestrator.
@@ -77,10 +78,12 @@ class Orchestrator:
             model_name: OpenAI model to use
             temperature: Sampling temperature
             timeout: Request timeout in seconds (default: 60)
+            max_history_messages: Maximum number of messages to keep in history (default: 10)
         """
         self.model_name = model_name
         self.temperature = temperature
         self.timeout = timeout
+        self.max_history_messages = max_history_messages
         self._chat_history = []
         self._state = OrchestratorState.INTENT
         self._cart = []
@@ -114,7 +117,9 @@ class Orchestrator:
 
             self._state = OrchestratorState.INTENT
 
-            result = self.rag_agent.invoke(request, chat_history=self._chat_history)
+            result = self.rag_agent.invoke(
+                request, chat_history=self._truncate_history()
+            )
 
             return self._append_product_details(result.message, result.products)
 
@@ -144,7 +149,9 @@ class Orchestrator:
 
             self._state = OrchestratorState.CHECKOUT
 
-            result = self.order_agent.invoke(request, chat_history=self._chat_history)
+            result = self.order_agent.invoke(
+                request, chat_history=self._truncate_history()
+            )
 
             if OrchestratorState.should_exit_checkout_mode(
                 result.status, result.transfer_to_agent
@@ -267,7 +274,9 @@ class Orchestrator:
             OrchestratorResponse with order agent's reply or RAG agent reply if transferred
         """
         logger.info("In order mode, routing directly to order agent")
-        result = self.order_agent.invoke(user_query, chat_history=self._chat_history)
+        result = self.order_agent.invoke(
+            user_query, chat_history=self._truncate_history()
+        )
 
         if OrchestratorState.should_exit_checkout_mode(
             result.status, result.transfer_to_agent
@@ -308,7 +317,7 @@ class Orchestrator:
         Returns:
             OrchestratorResponse with routed agent's reply
         """
-        messages = self._chat_history.copy()
+        messages = self._truncate_history().copy()
         messages.append({"role": "user", "content": user_query})
 
         try:
@@ -357,3 +366,21 @@ class Orchestrator:
             return message + "\n\nProducts Found:\n" + "\n".join(product_lines)
 
         return message
+
+    def _truncate_history(self) -> List[Dict]:
+        """
+        Truncate chat history to prevent timeouts from large context.
+
+        Keeps only the most recent N messages to balance context and performance.
+
+        Returns:
+            Truncated list of chat history messages
+        """
+        if len(self._chat_history) <= self.max_history_messages:
+            return self._chat_history
+
+        truncated = self._chat_history[-self.max_history_messages :]
+        logger.debug(
+            f"Truncated history from {len(self._chat_history)} to {len(truncated)} messages"
+        )
+        return truncated
