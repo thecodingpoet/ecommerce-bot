@@ -159,7 +159,7 @@ def run_web_ui(
                 logger.exception("Full traceback:")
             return f"❌ Error: {e}\nPlease try again."
 
-    with gr.Blocks() as demo:
+    with gr.Blocks(title="🛍️ E-Commerce Shopping Assistant") as demo:
         chatbot = gr.Chatbot(
             show_label=False,
             autoscroll=True,
@@ -169,8 +169,8 @@ def run_web_ui(
             fn=chat_fn,
             title="🛍️ Your AI Shopping Assistant",
             description=(
-                "Welcome! I’m here to help you shop:\n\n"
-                "• 🔎 Find products you’re looking for\n"
+                "Welcome! I'm here to help you shop:\n\n"
+                "• 🔎 Find products you're looking for\n"
                 "• ℹ️ See details like pricing and availability\n"
                 "• 🛒 Order items right here in the chat"
             ),
