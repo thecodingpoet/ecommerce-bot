@@ -66,6 +66,35 @@ The central brain of the system. It acts as a router, directing user intents to 
     -   **Cart Management:** Uses an in-memory cart (stored in Orchestrator) to track items before checkout.
     -   **Protocol:** Uses structured outputs (`OrderResponse`) to communicate status (`collecting_info`, `confirming`, `completed`) back to the orchestrator.
 
+### Middleware Configuration
+
+All agents use LangChain middleware to control LLM and tool call behavior, preventing infinite loops and excessive API costs:
+
+1.  **Orchestrator Agent**
+    -   **`ModelCallLimitMiddleware`**: Limits total LLM calls to **3** per invocation
+        -   Prevents excessive routing attempts when intent is unclear
+        -   Exit behavior: `"end"` (gracefully terminates after limit)
+
+2.  **RAG Agent**
+    -   **`ModelCallLimitMiddleware`**: Limits total LLM calls to **5** per invocation
+        -   Allows multiple product searches and comparisons within a single query
+        -   Exit behavior: `"end"` (gracefully terminates after limit)
+
+3.  **Order Agent**
+    -   **`ModelCallLimitMiddleware`**: Limits total LLM calls to **10** per invocation
+        -   Higher limit to accommodate multi-turn conversations (collecting customer info, confirmations)
+        -   Exit behavior: `"end"` (gracefully terminates after limit)
+    -   **`ToolCallLimitMiddleware`** (per-tool limits):
+        -   **`create_order`**: **1 call** per invocation (prevents duplicate orders)
+        -   **`view_cart`**: **2 calls** per invocation (allows cart checks during checkout)
+        -   **`add_to_cart`**: **3 calls** per invocation (allows adding multiple items)
+
+**Why Middleware?**
+-   **Cost Control:** Prevents runaway LLM API calls that could result in unexpected charges
+-   **Reliability:** Stops infinite loops when agents get stuck in repetitive behavior
+-   **User Experience:** Ensures responses are returned even if agents exceed reasonable iteration limits
+-   **Tool Safety:** Prevents critical operations (like `create_order`) from being called multiple times accidentally
+
 ### Chat History Strategy
 
 The agents have different requirements for conversation history, which affects how the Orchestrator passes context during agent handovers:
