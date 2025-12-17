@@ -87,7 +87,7 @@ What headphones do you have and how much are they?
 
 | Turn | User | Expected Assistant Response |
 |------|------|----------------------------|
-| 1 | "I'm looking for a laptop" | Lists available laptops (MacBook Pro, Dell XPS 13) with brief descriptions |
+| 1 | "Can you show me available laptops?" | Lists available laptops (MacBook Pro, Dell XPS 13) with brief descriptions |
 | 2 | "Tell me more about the Dell one" | Provides detailed info about Dell XPS 13: Intel Core i7, 16GB RAM, 512GB SSD, price $1,299.99 |
 | 3 | "How does it compare to the MacBook?" | Compares Dell XPS 13 vs MacBook Pro 16-inch, highlighting specs and price differences |
 | 4 | "I think I'll go with the Dell" | Recognizes purchase intent and either confirms or transfers to Order Agent |
@@ -98,25 +98,6 @@ What headphones do you have and how much are they?
 - ✅ Comparison is accurate and helpful
 - ✅ Purchase intent correctly triggers order flow
 
----
-
-### Test Case 2.2: Category Exploration with Follow-ups
-
-**Conversation Flow:**
-
-| Turn | User | Expected Assistant Response |
-|------|------|----------------------------|
-| 1 | "What gaming consoles do you have?" | Lists PS5, Nintendo Switch OLED, Xbox Series X |
-| 2 | "Which one has good availability?" | Mentions Nintendo Switch OLED (in_stock), notes PS5 and Xbox are low_stock |
-| 3 | "What's the Switch price?" | Returns $349.99 for Nintendo Switch OLED |
-| 4 | "And the Xbox?" | Returns $499.99 for Xbox Series X, may note low_stock |
-
-**Verification Criteria:**
-- ✅ All gaming consoles correctly identified
-- ✅ Stock status accurately reported
-- ✅ Follow-up questions resolved using conversation context
-
----
 
 ## 3. Order Confirmation with Extraction
 
@@ -158,74 +139,12 @@ What headphones do you have and how much are they?
 - ✅ Order ID generated and returned
 - ✅ Order status transitions: collecting_info → confirming → completed
 
----
-
-### Test Case 3.2: Multi-Item Order with Quantity
-
-**User Input (single message with all info):**
-```
-I'd like to order 2 Yoga Mats. My name is Alice Brown, email alice@test.com, ship to 456 Oak Ave, Chicago, IL 60601
-```
-
-**Expected Outcome:**
-- Extracts all information in single turn
-- Order summary shows:
-  - Product: Yoga Mat Premium (SPORT-003)
-  - Quantity: 2
-  - Unit Price: $39.99
-  - Total: $79.98
-- Asks for confirmation before creating order
-
-**Verification Criteria:**
-- ✅ Quantity correctly parsed as 2
-- ✅ Total calculation correct (2 × $39.99)
-- ✅ All customer info extracted from single message
-- ✅ Confirmation requested before order creation
-
----
-
-### Test Case 3.3: Order with Missing Information Prompts
-
-**Conversation Flow:**
-
-| Turn | User | Expected Assistant Response |
-|------|------|----------------------------|
-| 1 | "Buy TECH-003" | Adds AirPods Pro to cart, asks for name |
-| 2 | "Sarah" | Captures name, asks for email |
-| 3 | "sarah@gmail.com" | Captures email, asks for shipping address |
-| 4 | "Just ship it to my house" | Politely asks for complete shipping address |
-| 5 | "789 Elm St, Austin, TX 78701" | Shows order summary, asks for confirmation |
-
-**Verification Criteria:**
-- ✅ Order Agent collects info incrementally
-- ✅ Handles incomplete responses gracefully
-- ✅ All required fields collected before order creation
-
----
 
 ## 4. Ambiguous Query Handling
 
 **Objective:** Verify the system handles vague or ambiguous queries appropriately.
 
-### Test Case 4.1: Ambiguous Product Reference
-
-**User Input:**
-```
-I want the wireless one
-```
-
-**Expected Outcome:**
-- Agent asks clarifying question about which wireless product
-- May list wireless products: AirPods Pro, Sony headphones, wireless mice, etc.
-
-**Verification Criteria:**
-- ✅ Does not assume which product
-- ✅ Asks for clarification
-- ✅ Provides helpful context or options
-
----
-
-### Test Case 4.2: Intent Ambiguity
+### Test Case 4.1: Intent Ambiguity
 
 **User Input:**
 ```
@@ -245,7 +164,7 @@ I want a laptop
 
 ---
 
-### Test Case 4.3: Vague Quantity Request
+### Test Case 4.2: Vague Quantity Request
 
 **Conversation Flow:**
 
@@ -260,7 +179,7 @@ I want a laptop
 
 ---
 
-### Test Case 4.4: Product with Multiple Similar Results
+### Test Case 4.3: Product with Multiple Similar Results
 
 **User Input:**
 ```
