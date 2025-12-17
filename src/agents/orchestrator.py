@@ -232,24 +232,6 @@ class Orchestrator:
             f"Orchestrator initialized with model={model_name}, temperature={temperature}, timeout={timeout}s"
         )
 
-    def _append_product_details(self, message: str, products: List) -> str:
-        """
-        Append structured product details to the message.
-
-        This ensures Product IDs are always present in the chat history for the Order Agent to use.
-        """
-        if not products:
-            return message
-
-        product_lines = []
-        for p in products:
-            product_lines.append(f"• {p.name} (ID: {p.product_id}) - ${p.price:.2f}")
-
-        if product_lines:
-            return message + "\n\nProducts Found:\n" + "\n".join(product_lines)
-
-        return message
-
     def invoke(
         self, user_query: str, chat_history: Optional[List[Dict]] = None
     ) -> OrchestratorResponse:
@@ -270,40 +252,62 @@ class Orchestrator:
         self._chat_history = chat_history.copy() if chat_history else []
 
         if self._state.is_checkout_mode():
-            logger.info("In order mode, routing directly to order agent")
-            result = self.order_agent.invoke(
-                user_query, chat_history=self._chat_history
-            )
+            return self._handle_checkout_mode(user_query)
 
-            if OrchestratorState.should_exit_checkout_mode(
-                result.status, result.transfer_to_agent
-            ):
-                self._state = OrchestratorState.INTENT
-                logger.info(f"Order {result.status}, exiting order mode")
+        return self._handle_intent_mode(user_query)
 
-                if result.transfer_to_agent == "rag":
-                    logger.info("Order agent requested transfer to RAG, routing query")
-                    # Explicitly don't pass history on handover - assume new search intent and avoid timeouts
-                    rag_result = self.rag_agent.invoke(user_query, chat_history=[])
+    def _handle_checkout_mode(self, user_query: str) -> OrchestratorResponse:
+        """
+        Handle queries when in checkout mode (locked to order agent).
 
-                    # If RAG bounces back, return order transition message and await new query.
-                    if rag_result.transfer_to_agent == "order":
-                        logger.info(
-                            "RAG agent bounced back (not a search query). Returning order agent transition message."
-                        )
-                        return OrchestratorResponse(
-                            message=result.message, agent_used="order"
-                        )
+        Args:
+            user_query: User's question or request
 
-                    # Append product details to message to preserve IDs in history
-                    final_message = self._append_product_details(rag_result.message, rag_result.products)
+        Returns:
+            OrchestratorResponse with order agent's reply or RAG agent reply if transferred
+        """
+        logger.info("In order mode, routing directly to order agent")
+        result = self.order_agent.invoke(user_query, chat_history=self._chat_history)
 
+        if OrchestratorState.should_exit_checkout_mode(
+            result.status, result.transfer_to_agent
+        ):
+            self._state = OrchestratorState.INTENT
+            logger.info(f"Order {result.status}, exiting order mode")
+
+            if result.transfer_to_agent == "rag":
+                logger.info("Order agent requested transfer to RAG, routing query")
+                # Explicitly don't pass history on handover - assume new search intent and avoid timeouts
+                rag_result = self.rag_agent.invoke(user_query, chat_history=[])
+
+                # If RAG bounces back, return order transition message and await new query.
+                if rag_result.transfer_to_agent == "order":
+                    logger.info(
+                        "RAG agent bounced back (not a search query). Returning order agent transition message."
+                    )
                     return OrchestratorResponse(
-                        message=final_message, agent_used="rag"
+                        message=result.message, agent_used="order"
                     )
 
-            return OrchestratorResponse(message=result.message, agent_used="order")
+                # Append product details to message to preserve IDs in history
+                final_message = self._append_product_details(
+                    rag_result.message, rag_result.products
+                )
 
+                return OrchestratorResponse(message=final_message, agent_used="rag")
+
+        return OrchestratorResponse(message=result.message, agent_used="order")
+
+    def _handle_intent_mode(self, user_query: str) -> OrchestratorResponse:
+        """
+        Handle queries in intent mode (normal routing via orchestrator agent).
+
+        Args:
+            user_query: User's question or request
+
+        Returns:
+            OrchestratorResponse with routed agent's reply
+        """
         messages = self._chat_history.copy()
         messages.append({"role": "user", "content": user_query})
 
@@ -335,3 +339,21 @@ class Orchestrator:
 
         logger.info(f"Agent used: {structured_response.agent_used}")
         return structured_response
+
+    def _append_product_details(self, message: str, products: List) -> str:
+        """
+        Append structured product details to the message.
+
+        This ensures Product IDs are always present in the chat history for the Order Agent to use.
+        """
+        if not products:
+            return message
+
+        product_lines = []
+        for p in products:
+            product_lines.append(f"• {p.name} (ID: {p.product_id}) - ${p.price:.2f}")
+
+        if product_lines:
+            return message + "\n\nProducts Found:\n" + "\n".join(product_lines)
+
+        return message
