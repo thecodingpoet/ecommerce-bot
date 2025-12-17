@@ -76,7 +76,7 @@ class Orchestrator:
         Args:
             model_name: OpenAI model to use
             temperature: Sampling temperature
-            timeout: Request timeout in seconds (default: 15)
+            timeout: Request timeout in seconds (default: 60)
         """
         self.model_name = model_name
         self.temperature = temperature

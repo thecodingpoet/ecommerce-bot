@@ -45,7 +45,7 @@ class OrderAgent:
         Args:
             model_name: OpenAI model to use (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
-            timeout: Request timeout in seconds (default: 15)
+            timeout: Request timeout in seconds (default: 60)
             cart: Reference to orchestrator's cart list for storing items
         """
         self.model_name = model_name

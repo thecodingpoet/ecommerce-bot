@@ -46,7 +46,7 @@ class RAGAgent:
             model_name: OpenAI model to use for generation (must support structured output)
             temperature: Sampling temperature (0 = deterministic)
             k: Number of products to retrieve from vector store
-            timeout: Request timeout in seconds (default: 15)
+            timeout: Request timeout in seconds (default: 60)
         """
         self.model_name = model_name
         self.temperature = temperature
